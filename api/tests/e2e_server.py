@@ -1,18 +1,12 @@
-import sys
-from pathlib import Path
-
 import fakeredis
 import httpx2
 import uvicorn
+from conftest import FakeExtractor, FakeUpstream, audio_only, media, video
 from rq import Queue
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from conftest import FakeExtractor, FakeUpstream, audio_only, media, video  # noqa: E402
-
-from fetchall import runtime  # noqa: E402
-from fetchall.app import create_app  # noqa: E402
-from fetchall.config import Settings  # noqa: E402
+from fetchall import runtime
+from fetchall.app import create_app
+from fetchall.config import Settings
 
 E2E_LINK = "https://video.example/watch/1"
 
