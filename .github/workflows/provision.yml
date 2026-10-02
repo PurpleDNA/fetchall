@@ -53,8 +53,11 @@ jobs:
 
       - name: Create the VM
         id: apply
+        shell: bash
         run: |
-          if terraform state list | grep -q '^oci_core_instance.fetchall$'; then
+          set -euo pipefail
+          resources=$(terraform state list)
+          if grep -qx 'oci_core_instance.fetchall' <<< "$resources"; then
             echo "VM already exists."
             echo "created=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -65,7 +68,12 @@ jobs:
               echo "created=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            grep -oE 'Out of host capacity|Error: .{0,160}' apply.log | head -1
+            if ! grep -q 'Out of host capacity' apply.log; then
+              echo "::error::terraform apply failed for a reason other than capacity"
+              sed 's/\x1b\[[0-9;]*m//g' apply.log | tail -30
+              exit 1
+            fi
+            echo "$fd: out of host capacity"
           done
           echo "No capacity this time; will retry on the next schedule."
           echo "created=false" >> "$GITHUB_OUTPUT"
