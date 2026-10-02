@@ -1,6 +1,7 @@
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx2
 from redis import Redis
@@ -9,6 +10,7 @@ from rq import Queue
 from fetchall.config import Settings
 from fetchall.extractor import Extractor
 from fetchall.jobs import JobStore
+from fetchall.temp import TempStore
 
 
 @dataclass
@@ -17,6 +19,7 @@ class Runtime:
     redis: Redis
     queue: Queue
     jobs: JobStore
+    temp: TempStore
     extractor: Extractor
     http_transport: httpx2.AsyncBaseTransport | None = None
 
@@ -49,6 +52,14 @@ def build(
         redis=redis,
         queue=Queue(settings.queue_name, connection=redis),
         jobs=JobStore(redis, settings.job_ttl_seconds, clock),
+        temp=TempStore(
+            redis,
+            Path(settings.temp_dir),
+            settings.temp_file_ttl_seconds,
+            settings.prepare_timeout_seconds,
+            settings.temp_ceiling_bytes,
+            clock,
+        ),
         extractor=extractor,
         http_transport=http_transport,
     )

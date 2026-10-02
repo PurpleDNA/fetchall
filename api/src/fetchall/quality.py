@@ -63,8 +63,16 @@ def _video_option(id: str, label: str, f: Format, audio: Format | None) -> Quali
     )
 
 
+PLAYS_EVERYWHERE = ("avc1", "h264")
+
+
 def _preference(f: Format) -> tuple:
-    return (f.has_audio, f.single_file, f.filesize or 0)
+    return (
+        f.has_audio,
+        f.single_file,
+        (f.vcodec or "").startswith(PLAYS_EVERYWHERE),
+        f.filesize or 0,
+    )
 
 
 def _best_audio(formats: tuple[Format, ...]) -> Format | None:

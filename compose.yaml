@@ -4,6 +4,8 @@ x-backend: &backend
   env_file:
     - path: .env
       required: false
+  volumes:
+    - prepared:/data/prepared
 
 services:
   redis:
@@ -20,6 +22,7 @@ services:
     environment:
       FETCHALL_REDIS_URL: redis://redis:6379/0
       FETCHALL_EGRESS_PROXY_URL: http://egress:8888
+      FETCHALL_TEMP_DIR: /data/prepared
     networks: [internal, outside]
     ports:
       - "8000:8000"
@@ -34,6 +37,7 @@ services:
     environment:
       FETCHALL_REDIS_URL: redis://redis:6379/0
       FETCHALL_EGRESS_PROXY_URL: http://egress:8888
+      FETCHALL_TEMP_DIR: /data/prepared
       HTTP_PROXY: http://egress:8888
       HTTPS_PROXY: http://egress:8888
       NO_PROXY: redis
@@ -61,6 +65,9 @@ services:
     volumes:
       - ./web:/app
       - /app/node_modules
+
+volumes:
+  prepared: {}
 
 networks:
   internal:

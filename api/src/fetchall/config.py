@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     job_ttl_seconds: int = 3600
     sse_poll_seconds: float = 0.5
 
+    prepare_timeout_seconds: int = 900
+    temp_dir: str = "/tmp/fetchall"
+    temp_file_ttl_seconds: int = 900
+    temp_ceiling_bytes: int = 20_000_000_000
+    sweep_interval_seconds: float = 60
+
     # Every worker request goes through the egress proxy; unset only for local runs outside Docker.
     egress_proxy_url: str | None = None
     egress_host: str = "0.0.0.0"

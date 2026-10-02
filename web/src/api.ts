@@ -22,10 +22,14 @@ export type Media = {
   options: QualityOption[];
 };
 
+export type PreparedFile = { url: string; filename: string; size: number };
+
 export type JobEvent =
   | { stage: "queued"; at: number }
   | { stage: "extracting"; at: number }
-  | { stage: "ready"; at: number; media: Media }
+  | { stage: "downloading"; at: number; progress: number }
+  | { stage: "merging"; at: number }
+  | { stage: "ready"; at: number; media?: Media; file?: PreparedFile }
   | { stage: "failed"; at: number; outcome: string; message: string };
 
 const TERMINAL = new Set(["ready", "failed"]);
@@ -67,7 +71,16 @@ export async function planDownload(jobId: string, optionId: string): Promise<Dow
   return response.json();
 }
 
-export function saveFile(plan: DownloadPlan) {
+export async function startPrepare(jobId: string, optionId: string): Promise<string> {
+  const response = await fetch(`${API_URL}/jobs/${jobId}/prepare/${optionId}`, { method: "POST" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Error(detail?.detail ?? "Couldn't start preparing that download.");
+  }
+  return (await response.json()).id;
+}
+
+export function saveFile(plan: { url?: string; filename: string }) {
   if (!plan.url) return;
   const link = document.createElement("a");
   link.href = plan.url.startsWith("/") ? `${API_URL}${plan.url}` : plan.url;

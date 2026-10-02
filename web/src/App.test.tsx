@@ -79,8 +79,9 @@ test("shows the API as degraded when Redis is down", async () => {
   expect(await screen.findByText("API degraded (Redis unreachable)")).toBeInTheDocument();
 });
 
-async function readyCard(plan: object) {
+async function readyCard(plan: object, routes: Parameters<typeof stubFetch>[0] = {}) {
   const fetch = stubFetch({
+    ...routes,
     ...healthy,
     "POST /jobs": json({ id: "j1", stage: "queued", at: 1 }, 202),
     "GET /jobs/j1/downloads/720p": json(plan),
@@ -118,13 +119,51 @@ test("opens direct links as they are", async () => {
   expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("https://cdn.example/v.mp4");
 });
 
-test("explains when a quality needs server processing", async () => {
-  await readyCard({ delivery: "prepare", filename: "A short film (720p).mp4" });
+test("prepares merged qualities on the server, showing progress, then saves the file", async () => {
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await readyCard(
+    { delivery: "prepare", filename: "A short film (720p).mp4" },
+    { "POST /jobs/j1/prepare/720p": json({ id: "p1", stage: "queued", at: 4 }, 202) },
+  );
+
+  fireEvent.click(screen.getByRole("radio", { name: /720p/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Download" }));
+  await vi.waitFor(() => expect(FakeEventSource.latest().url).toMatch(/\/jobs\/p1\/events$/));
+  const source = FakeEventSource.latest();
+
+  act(() => source.emit({ stage: "downloading", at: 4, progress: 0.43 }));
+  expect(screen.getByText("Downloading 43%")).toBeInTheDocument();
+  act(() => source.emit({ stage: "merging", at: 5 }));
+  expect(screen.getByText("Merging video and audio…")).toBeInTheDocument();
+  act(() =>
+    source.emit({
+      stage: "ready",
+      at: 6,
+      file: { url: "/files/p1", filename: "A short film (720p).mp4", size: 12 },
+    }),
+  );
+
+  const link = click.mock.contexts[0] as HTMLAnchorElement;
+  expect(link.href).toBe("http://localhost:8000/files/p1");
+  expect(link.download).toBe("A short film (720p).mp4");
+  expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+});
+
+test("explains when the server is too busy to prepare", async () => {
+  await readyCard(
+    { delivery: "prepare", filename: "A short film (720p).mp4" },
+    {
+      "POST /jobs/j1/prepare/720p": json(
+        { detail: "fetchall is busy preparing other downloads." },
+        503,
+      ),
+    },
+  );
 
   fireEvent.click(screen.getByRole("radio", { name: /720p/ }));
   fireEvent.click(screen.getByRole("button", { name: "Download" }));
 
-  expect(await screen.findByText(/needs processing on the server/)).toBeInTheDocument();
+  expect(await screen.findByText("fetchall is busy preparing other downloads.")).toBeInTheDocument();
 });
 
 test("downloads the thumbnail", async () => {

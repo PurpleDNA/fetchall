@@ -24,6 +24,8 @@ class Plan:
     filename: str
     source_url: str = ""
     headers: dict[str, str] | None = None
+    format_ids: tuple[str, ...] = ()
+    container: str = ""
 
 
 class UnknownOption(Exception):
@@ -44,11 +46,13 @@ def plan_delivery(media: MediaInfo, option_id: str) -> Plan:
     chosen = [formats[i] for i in option.format_ids]
     first = chosen[0]
     label = None if option.audio_only else option.label
-    ext = "mp4" if option.needs_merge else first.ext
-    filename = filename_for(media.title, label, ext)
 
     if option.needs_merge or not first.single_file:
-        return Plan(Delivery.PREPARE, filename)
+        container = "m4a" if option.audio_only else "mp4"
+        filename = filename_for(media.title, label, container)
+        return Plan(Delivery.PREPARE, filename, format_ids=option.format_ids, container=container)
+
+    filename = filename_for(media.title, label, first.ext)
     if _browser_can_fetch(first):
         return Plan(Delivery.DIRECT, filename, first.url, first.headers)
     return Plan(Delivery.STREAM, filename, first.url, first.headers)

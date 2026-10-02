@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 import fakeredis
 import httpx2
@@ -19,6 +20,23 @@ FRONTEND = "http://localhost:5173"
 class FakeExtractor:
     def __init__(self):
         self.script: dict[str, MediaInfo | Exception | Callable[[], MediaInfo]] = {}
+        self.downloads: dict[str, bytes | Exception | Callable[[], bytes]] = {}
+        self.download_calls: list[tuple[str, tuple[str, ...], str]] = []
+
+    def download(self, url, format_ids, container, dest: Path, progress) -> Path:
+        self.download_calls.append((url, format_ids, container))
+        result = self.downloads.get(url, b"merged-bytes")
+        progress("downloading", 0.5)
+        if isinstance(result, Exception):
+            raise result
+        data = result() if callable(result) else result
+        (dest / "video.part").write_bytes(data[: len(data) // 2])
+        progress("downloading", 1.0)
+        progress("merging", None)
+        (dest / "video.part").unlink()
+        path = dest / f"media.{container}"
+        path.write_bytes(data)
+        return path
 
     def inspect(self, url: str) -> MediaInfo:
         result = self.script.get(url)
@@ -101,8 +119,9 @@ def parse_sse(body: str) -> list[tuple[str, dict]]:
 
 
 @pytest.fixture
-def make_harness():
+def make_harness(tmp_path):
     def make(**settings) -> Harness:
+        settings.setdefault("temp_dir", str(tmp_path / "prepared"))
         server = fakeredis.FakeServer()
         redis = fakeredis.FakeRedis(server=server)
         extractor, clock, upstream = FakeExtractor(), FakeClock(), FakeUpstream()
@@ -133,8 +152,11 @@ def video(
     single_file: bool = True,
     ip_bound: bool = False,
     headers: dict[str, str] | None = None,
+    vcodec: str = "avc1.4d401f",
 ) -> Format:
-    format_id = f"v{height}{'a' if audio else ''}"
+    format_id = (
+        f"v{height}{'a' if audio else ''}{'' if vcodec.startswith('avc1') else '-' + vcodec}"
+    )
     return Format(
         id=format_id,
         ext="mp4",
@@ -146,6 +168,7 @@ def video(
         ip_bound=ip_bound,
         url=f"https://cdn.example/{format_id}.mp4",
         headers=headers or {"User-Agent": "yt-dlp-ua"},
+        vcodec=vcodec,
     )
 
 

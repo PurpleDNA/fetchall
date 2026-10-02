@@ -1,5 +1,7 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol
 
 
@@ -33,6 +35,7 @@ class Format:
     # The media URL only works from the IP that extracted it (YouTube).
     ip_bound: bool
     url: str = ""
+    vcodec: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
 
 
@@ -48,5 +51,12 @@ class MediaInfo:
     formats: tuple[Format, ...]
 
 
+Progress = Callable[[str, float | None], None]
+
+
 class Extractor(Protocol):
     def inspect(self, url: str) -> MediaInfo: ...
+
+    def download(
+        self, url: str, format_ids: tuple[str, ...], container: str, dest: Path, progress: Progress
+    ) -> Path: ...
