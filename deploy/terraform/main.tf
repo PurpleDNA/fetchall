@@ -1,5 +1,14 @@
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.12"
+
+  # State lives in a private, versioned Object Storage bucket so CI and laptops share it.
+  # The namespace is passed at init: -backend-config="namespace=<tenancy namespace>".
+  backend "oci" {
+    bucket = "fetchall-tfstate"
+    key    = "fetchall/terraform.tfstate"
+    region = "af-johannesburg-1"
+  }
+
   required_providers {
     oci = {
       source  = "oracle/oci"
@@ -108,12 +117,12 @@ resource "oci_core_instance" "fetchall" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(pathexpand(var.ssh_public_key_path))
+    ssh_authorized_keys = file("${path.module}/fetchall_oci.pub")
     user_data           = base64encode(file("${path.module}/cloud-init.yaml"))
   }
 
   lifecycle {
-    ignore_changes = [source_details[0].source_id, metadata["user_data"]]
+    ignore_changes = [source_details[0].source_id, metadata["user_data"], fault_domain]
   }
 }
 

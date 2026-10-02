@@ -12,11 +12,6 @@ variable "oci_profile" {
   default = "DEFAULT"
 }
 
-variable "ssh_public_key_path" {
-  type    = string
-  default = "~/.ssh/fetchall_oci.pub"
-}
-
 variable "ocpus" {
   type    = number
   default = 2
