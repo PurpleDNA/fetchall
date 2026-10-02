@@ -1,10 +1,29 @@
 import { useState } from "react";
-import type { Media } from "./api";
+import { type Media, planDownload, saveFile } from "./api";
 import { formatBytes, formatDuration } from "./format";
 
-export function MediaCard({ media }: { media: Media }) {
+const PREPARE_NOTE = "This quality needs processing on the server, which isn't available yet.";
+
+export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
   const [choice, setChoice] = useState(media.options[0]?.id);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const details = [media.uploader, formatDuration(media.duration), media.site].filter(Boolean);
+
+  async function download(optionId: string | undefined) {
+    if (!optionId) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const plan = await planDownload(jobId, optionId);
+      if (plan.delivery === "prepare") setNote(PREPARE_NOTE);
+      else saveFile(plan);
+    } catch (error) {
+      setNote((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <article className="media">
@@ -30,6 +49,21 @@ export function MediaCard({ media }: { media: Media }) {
             </label>
           ))}
         </fieldset>
+        <div className="actions">
+          <button type="button" className="primary" disabled={busy} onClick={() => download(choice)}>
+            Download
+          </button>
+          {media.thumbnail && (
+            <button type="button" disabled={busy} onClick={() => download("thumbnail")}>
+              Thumbnail
+            </button>
+          )}
+        </div>
+        {note && (
+          <p className="note" role="status">
+            {note}
+          </p>
+        )}
       </div>
     </article>
   );

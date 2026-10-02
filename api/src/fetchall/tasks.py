@@ -29,6 +29,7 @@ def inspect(job_id: str, url: str) -> None:
         log.exception("inspect crashed for job %s", job_id)
         rt.jobs.append(job_id, failed(Outcome.INTERNAL, CRASH_MESSAGE))
         return
+    rt.jobs.save_media(job_id, media)
     rt.jobs.append(job_id, {"stage": READY, "media": present(media)})
 
 

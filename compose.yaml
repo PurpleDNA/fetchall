@@ -19,6 +19,7 @@ services:
     <<: *backend
     environment:
       FETCHALL_REDIS_URL: redis://redis:6379/0
+      FETCHALL_EGRESS_PROXY_URL: http://egress:8888
     networks: [internal, outside]
     ports:
       - "8000:8000"

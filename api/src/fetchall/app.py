@@ -3,9 +3,10 @@ from typing import Annotated
 from urllib.parse import urlsplit
 
 import anyio
+import httpx2
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, field_validator
 from redis.exceptions import RedisError
@@ -13,6 +14,7 @@ from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
 
 from fetchall import tasks
+from fetchall.delivery import Delivery, UnknownOption, content_disposition, plan_delivery
 from fetchall.extractor import Outcome
 from fetchall.jobs import TERMINAL, Event, failed
 from fetchall.runtime import Runtime, build
@@ -92,6 +94,67 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
                 if event["stage"] in TERMINAL:
                     return
             await anyio.sleep(rt.settings.sse_poll_seconds)
+
+    def plan_for(job_id: str, option_id: str):
+        media = rt.jobs.load_media(job_id)
+        if media is None:
+            raise HTTPException(409, "This link hasn't finished inspecting yet.")
+        try:
+            return plan_delivery(media, option_id)
+        except UnknownOption:
+            raise HTTPException(404, "That option isn't available for this video.") from None
+
+    @app.get("/jobs/{job_id}/downloads/{option_id}")
+    def download_plan(job_id: Existing, option_id: str):
+        plan = plan_for(job_id, option_id)
+        body = {"delivery": plan.delivery, "filename": plan.filename}
+        if plan.delivery == Delivery.DIRECT:
+            body["url"] = plan.source_url
+        elif plan.delivery == Delivery.STREAM:
+            body["url"] = f"/jobs/{job_id}/files/{option_id}"
+        return body
+
+    @app.get("/jobs/{job_id}/files/{option_id}")
+    async def stream_file(
+        job_id: Existing, option_id: str, range: Annotated[str | None, Header()] = None
+    ):
+        plan = await anyio.to_thread.run_sync(plan_for, job_id, option_id)
+        if plan.delivery != Delivery.STREAM:
+            raise HTTPException(404, "This option isn't streamed by the server.")
+        client = rt.http_client()
+        headers = {**(plan.headers or {}), **({"Range": range} if range else {})}
+        try:
+            upstream = await client.send(
+                client.build_request("GET", plan.source_url, headers=headers), stream=True
+            )
+        except httpx2.HTTPError:
+            await client.aclose()
+            raise HTTPException(502, "The site didn't send the file. Try again.") from None
+        if upstream.status_code not in (200, 206):
+            await upstream.aclose()
+            await client.aclose()
+            raise HTTPException(502, "The site didn't send the file. Try again.")
+
+        async def body():
+            try:
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        passed_on = {
+            k: upstream.headers[k]
+            for k in ("content-type", "content-length", "content-range", "accept-ranges")
+            if k in upstream.headers
+        }
+        if "content-encoding" in upstream.headers:
+            passed_on.pop("content-length", None)
+        return StreamingResponse(
+            body(),
+            status_code=upstream.status_code,
+            headers={**passed_on, "content-disposition": content_disposition(plan.filename)},
+        )
 
     def current_state(job_id: str) -> Event:
         # A worker killed mid-job never reports, so fall back to RQ's view of the job.

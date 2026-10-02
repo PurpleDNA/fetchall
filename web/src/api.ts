@@ -40,6 +40,12 @@ export async function fetchHealth(): Promise<Health> {
   }
 }
 
+export type DownloadPlan = {
+  delivery: "direct" | "stream" | "prepare";
+  filename: string;
+  url?: string;
+};
+
 export class InvalidLink extends Error {}
 
 export async function createInspectJob(url: string): Promise<string> {
@@ -53,6 +59,22 @@ export async function createInspectJob(url: string): Promise<string> {
   }
   if (!response.ok) throw new Error(`Couldn't start the job (HTTP ${response.status}).`);
   return (await response.json()).id;
+}
+
+export async function planDownload(jobId: string, optionId: string): Promise<DownloadPlan> {
+  const response = await fetch(`${API_URL}/jobs/${jobId}/downloads/${optionId}`);
+  if (!response.ok) throw new Error("That download isn't available any more. Fetch the link again.");
+  return response.json();
+}
+
+export function saveFile(plan: DownloadPlan) {
+  if (!plan.url) return;
+  const link = document.createElement("a");
+  link.href = plan.url.startsWith("/") ? `${API_URL}${plan.url}` : plan.url;
+  link.download = plan.filename;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.click();
 }
 
 export function subscribeToJob(

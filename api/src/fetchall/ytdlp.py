@@ -80,6 +80,8 @@ def _format(f: dict[str, Any], site: str) -> Format:
         filesize=f.get("filesize") or f.get("filesize_approx"),
         single_file=protocol in ("http", "https"),
         ip_bound=site.lower() == "youtube" or "ip" in parse_qs(urlsplit(url).query),
+        url=url,
+        headers=dict(f.get("http_headers") or {}),
     )
 
 
