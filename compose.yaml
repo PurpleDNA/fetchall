@@ -40,17 +40,25 @@ services:
     environment:
       FETCHALL_REDIS_URL: redis://redis:6379/0
       FETCHALL_EGRESS_PROXY_URL: http://egress:8888
+      FETCHALL_POT_PROVIDER_URL: http://bgutil:4416
       FETCHALL_TEMP_DIR: /data/prepared
       FETCHALL_JOB_LOG_PATH: /data/log/jobs.sqlite3
       HTTP_PROXY: http://egress:8888
       HTTPS_PROXY: http://egress:8888
-      NO_PROXY: redis
+      NO_PROXY: redis,bgutil
     networks: [internal]
     depends_on:
       redis:
         condition: service_healthy
       egress:
         condition: service_started
+      bgutil:
+        condition: service_started
+
+  # Mints YouTube PO tokens; it reaches Google only through the proxy yt-dlp hands it (egress).
+  bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    networks: [internal]
 
   egress:
     <<: *backend
