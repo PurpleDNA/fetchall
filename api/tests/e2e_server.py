@@ -19,7 +19,7 @@ def build_app():
 
     redis = fakeredis.FakeRedis()
     rt = runtime.build(
-        Settings(cors_origins=["http://localhost:5174"]),
+        Settings(cors_origins=["http://localhost:5174"], report_email="takedown@fetchall.example"),
         redis=redis,
         extractor=extractor,
         http_transport=httpx2.MockTransport(upstream.handle),

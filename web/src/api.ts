@@ -36,6 +36,24 @@ export type JobEvent =
 
 const TERMINAL = new Set(["ready", "failed"]);
 
+export type About = {
+  report_email: string | null;
+  log_retention_days: number;
+  temp_file_minutes: number;
+};
+
+export async function fetchAbout(): Promise<About> {
+  const response = await fetch(`${API_URL}/about`);
+  if (!response.ok) throw new Error("Couldn't load fetchall's details.");
+  return response.json();
+}
+
+export async function fetchSites(): Promise<string[]> {
+  const response = await fetch(`${API_URL}/sites`);
+  if (!response.ok) throw new Error("Couldn't load the list of sites.");
+  return (await response.json()).sites;
+}
+
 export async function fetchHealth(): Promise<Health> {
   try {
     const response = await fetch(`${API_URL}/health`);
