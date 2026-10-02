@@ -23,6 +23,7 @@ from fetchall.limits import Refusal
 from fetchall.policy import UNAVAILABLE_MESSAGE
 from fetchall.routes import is_proxy
 from fetchall.runtime import Runtime, build
+from fetchall.sites import supported_sites
 
 MAX_URL_LENGTH = 2048
 WORKER_LOST_MESSAGE = "The job stopped unexpectedly. Try again in a moment."
@@ -89,6 +90,18 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         except RedisError:
             return JSONResponse({"status": "degraded", "redis": "unreachable"}, status_code=503)
         return {"status": "ok", "redis": "ok"}
+
+    @app.get("/about")
+    def about():
+        return {
+            "report_email": rt.settings.report_email,
+            "log_retention_days": rt.settings.job_log_retention_seconds // 86400,
+            "temp_file_minutes": rt.settings.temp_file_ttl_seconds // 60,
+        }
+
+    @app.get("/sites")
+    def sites():
+        return {"sites": supported_sites()}
 
     @app.post("/jobs", status_code=202)
     def create_job(body: JobRequest, request: Request):

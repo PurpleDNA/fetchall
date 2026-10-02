@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, type JSX, useEffect, useRef, useState } from "react";
 import {
   createInspectJob,
   fetchHealth,
@@ -10,6 +10,11 @@ import {
 } from "./api";
 import { MediaCard } from "./MediaCard";
 import { outcomeTitle } from "./outcomes";
+import { Privacy } from "./pages/Privacy";
+import { Report } from "./pages/Report";
+import { Sites } from "./pages/Sites";
+import { Terms } from "./pages/Terms";
+import { Link, usePath } from "./router";
 
 type View =
   | { kind: "idle" }
@@ -30,16 +35,66 @@ const HEALTH_LABELS: Record<Health | "checking", string> = {
   unreachable: "API unreachable",
 };
 
+const PAGES: Record<string, () => JSX.Element> = {
+  "/": Home,
+  "/terms": Terms,
+  "/privacy": Privacy,
+  "/sites": Sites,
+  "/report": Report,
+};
+
 export default function App() {
-  const [url, setUrl] = useState("");
-  const [view, setView] = useState<View>({ kind: "idle" });
+  const path = usePath();
   const [health, setHealth] = useState<Health | "checking">("checking");
-  const unsubscribe = useRef<(() => void) | null>(null);
+  const Page = PAGES[path] ?? NotFound;
 
   useEffect(() => {
     fetchHealth().then(setHealth);
-    return () => unsubscribe.current?.();
   }, []);
+
+  return (
+    <div className="page">
+      <header>
+        <h1>
+          <Link to="/">fetchall</Link>
+        </h1>
+        <p className="tagline">Paste a link, get the video.</p>
+      </header>
+
+      <Page />
+
+      <footer>
+        <nav aria-label="About fetchall">
+          <Link to="/terms">Terms</Link>
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/sites">Supported sites</Link>
+          <Link to="/report">Report content</Link>
+        </nav>
+        <p>
+          <span className={`dot ${health}`} /> {HEALTH_LABELS[health]}
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <article className="page-text">
+      <h2>Page not found</h2>
+      <p>
+        <Link to="/">Go back to fetchall</Link>
+      </p>
+    </article>
+  );
+}
+
+function Home() {
+  const [url, setUrl] = useState("");
+  const [view, setView] = useState<View>({ kind: "idle" });
+  const unsubscribe = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => unsubscribe.current?.(), []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -67,12 +122,7 @@ export default function App() {
   }
 
   return (
-    <div className="page">
-      <header>
-        <h1>fetchall</h1>
-        <p className="tagline">Paste a link, get the video.</p>
-      </header>
-
+    <>
       <form className="paste" onSubmit={submit}>
         <label htmlFor="url" className="visually-hidden">
           Video link
@@ -109,10 +159,6 @@ export default function App() {
         )}
         {view.kind === "ready" && <MediaCard jobId={view.jobId} media={view.media} />}
       </section>
-
-      <footer>
-        <span className={`dot ${health}`} /> {HEALTH_LABELS[health]}
-      </footer>
-    </div>
+    </>
   );
 }

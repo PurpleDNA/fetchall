@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     job_log_path: str = "/tmp/fetchall-log/jobs.sqlite3"
     job_log_retention_seconds: int = 7 * 24 * 3600
     policy_file: str = "/config/policy.toml"
+    report_email: str | None = None
 
     prepare_timeout_seconds: int = 900
     temp_dir: str = "/tmp/fetchall"
