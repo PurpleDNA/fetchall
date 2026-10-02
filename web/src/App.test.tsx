@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
 import { FakeEventSource, installEventSource, json, media, stubFetch } from "./test/fakes";
 
@@ -77,4 +77,62 @@ test("shows the API as degraded when Redis is down", async () => {
   render(<App />);
 
   expect(await screen.findByText("API degraded (Redis unreachable)")).toBeInTheDocument();
+});
+
+async function readyCard(plan: object) {
+  const fetch = stubFetch({
+    ...healthy,
+    "POST /jobs": json({ id: "j1", stage: "queued", at: 1 }, 202),
+    "GET /jobs/j1/downloads/720p": json(plan),
+    "GET /jobs/j1/downloads/thumbnail": json({ delivery: "stream", filename: "A short film.jpg", url: "/jobs/j1/files/thumbnail" }),
+  });
+  render(<App />);
+  paste("https://video.example/watch/1");
+  await screen.findByText("Starting…");
+  await act(async () => {});
+  act(() => FakeEventSource.latest().emit({ stage: "ready", at: 3, media }));
+  return fetch;
+}
+
+test("downloads the chosen quality using the server's plan", async () => {
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await readyCard({ delivery: "stream", filename: "A short film (720p).mp4", url: "/jobs/j1/files/720p" });
+
+  fireEvent.click(screen.getByRole("radio", { name: /720p/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+  await vi.waitFor(() => expect(click).toHaveBeenCalled());
+  const link = click.mock.contexts[0] as HTMLAnchorElement;
+  expect(link.href).toBe("http://localhost:8000/jobs/j1/files/720p");
+  expect(link.download).toBe("A short film (720p).mp4");
+});
+
+test("opens direct links as they are", async () => {
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await readyCard({ delivery: "direct", filename: "A short film (720p).mp4", url: "https://cdn.example/v.mp4" });
+
+  fireEvent.click(screen.getByRole("radio", { name: /720p/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+  await vi.waitFor(() => expect(click).toHaveBeenCalled());
+  expect((click.mock.contexts[0] as HTMLAnchorElement).href).toBe("https://cdn.example/v.mp4");
+});
+
+test("explains when a quality needs server processing", async () => {
+  await readyCard({ delivery: "prepare", filename: "A short film (720p).mp4" });
+
+  fireEvent.click(screen.getByRole("radio", { name: /720p/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+  expect(await screen.findByText(/needs processing on the server/)).toBeInTheDocument();
+});
+
+test("downloads the thumbnail", async () => {
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await readyCard({ delivery: "stream", filename: "x", url: "/x" });
+
+  fireEvent.click(screen.getByRole("button", { name: "Thumbnail" }));
+
+  await vi.waitFor(() => expect(click).toHaveBeenCalled());
+  expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe("A short film.jpg");
 });

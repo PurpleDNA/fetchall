@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
@@ -32,6 +32,8 @@ class Format:
     single_file: bool
     # The media URL only works from the IP that extracted it (YouTube).
     ip_bound: bool
+    url: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

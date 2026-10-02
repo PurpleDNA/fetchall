@@ -1,9 +1,12 @@
 import json
 import secrets
 from collections.abc import Callable
+from dataclasses import asdict
 from typing import Any
 
 from redis import Redis
+
+from fetchall.extractor import Format, MediaInfo
 
 Event = dict[str, Any]
 
@@ -38,6 +41,17 @@ class JobStore:
     def latest(self, job_id: str) -> Event | None:
         raw = self._redis.lindex(_events_key(job_id), -1)
         return json.loads(raw) if raw else None
+
+    def save_media(self, job_id: str, media: MediaInfo) -> None:
+        self._redis.hset(_meta_key(job_id), "media", json.dumps(asdict(media)))
+
+    def load_media(self, job_id: str) -> MediaInfo | None:
+        raw = self._redis.hget(_meta_key(job_id), "media")
+        if not raw:
+            return None
+        data = json.loads(raw)
+        data["formats"] = tuple(Format(**f) for f in data["formats"])
+        return MediaInfo(**data)
 
 
 def failed(outcome: str, message: str) -> Event:

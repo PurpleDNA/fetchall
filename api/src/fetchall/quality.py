@@ -10,6 +10,7 @@ class QualityOption:
     height: int | None
     size: int | None
     needs_merge: bool
+    format_ids: tuple[str, ...]
     audio_only: bool = False
 
 
@@ -35,10 +36,11 @@ def quality_options(media: MediaInfo) -> list[QualityOption]:
         options.append(
             QualityOption(
                 id="audio",
-                label="Audio only (M4A)",
+                label=f"Audio only ({audio.ext.upper()})",
                 height=None,
                 size=audio.filesize,
                 needs_merge=False,
+                format_ids=(audio.id,),
                 audio_only=True,
             )
         )
@@ -50,7 +52,15 @@ def _video_option(id: str, label: str, f: Format, audio: Format | None) -> Quali
     size = f.filesize
     if needs_merge:
         size = f.filesize + audio.filesize if f.filesize and audio.filesize else None
-    return QualityOption(id=id, label=label, height=f.height, size=size, needs_merge=needs_merge)
+    format_ids = (f.id, audio.id) if needs_merge else (f.id,)
+    return QualityOption(
+        id=id,
+        label=label,
+        height=f.height,
+        size=size,
+        needs_merge=needs_merge,
+        format_ids=format_ids,
+    )
 
 
 def _preference(f: Format) -> tuple:

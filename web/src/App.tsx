@@ -12,7 +12,7 @@ import { MediaCard } from "./MediaCard";
 type View =
   | { kind: "idle" }
   | { kind: "working"; stage: "starting" | "queued" | "extracting" }
-  | { kind: "ready"; media: Media }
+  | { kind: "ready"; jobId: string; media: Media }
   | { kind: "failed"; message: string };
 
 const STAGE_LABELS = {
@@ -46,7 +46,7 @@ export default function App() {
     try {
       const id = await createInspectJob(url.trim());
       unsubscribe.current = subscribeToJob(id, (e) => {
-        if (e.stage === "ready") setView({ kind: "ready", media: e.media });
+        if (e.stage === "ready") setView({ kind: "ready", jobId: id, media: e.media });
         else if (e.stage === "failed") setView({ kind: "failed", message: e.message });
         else setView({ kind: "working", stage: e.stage });
       });
@@ -94,7 +94,7 @@ export default function App() {
             {view.message}
           </p>
         )}
-        {view.kind === "ready" && <MediaCard media={view.media} />}
+        {view.kind === "ready" && <MediaCard jobId={view.jobId} media={view.media} />}
       </section>
 
       <footer>
