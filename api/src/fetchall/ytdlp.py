@@ -6,7 +6,7 @@ from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
 from fetchall.extractor import ExtractionFailed, Format, MediaInfo, Outcome, Progress
-from fetchall.failures import classify
+from fetchall.failures import MESSAGES, classify
 
 MERGE_STEPS = {"Merger", "FFmpegVideoRemuxer", "FFmpegFixupM3u8"}
 
@@ -22,8 +22,14 @@ BASE_OPTIONS: dict[str, Any] = {
 
 
 class YtDlpExtractor:
-    def __init__(self, proxy: str | None = None, options: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        proxy: str | None = None,
+        max_filesize: int | None = None,
+        options: dict[str, Any] | None = None,
+    ):
         self._options = {**BASE_OPTIONS, **({"proxy": proxy} if proxy else {}), **(options or {})}
+        self._max_filesize = max_filesize
 
     def inspect(self, url: str) -> MediaInfo:
         with YoutubeDL(self._options) as ydl:
@@ -56,6 +62,7 @@ class YtDlpExtractor:
         options = {
             **self._options,
             "skip_download": False,
+            "max_filesize": self._max_filesize,
             "format": "+".join(format_ids),
             "paths": {"home": str(dest), "temp": str(dest)},
             "outtmpl": "media.%(ext)s",
@@ -72,6 +79,9 @@ class YtDlpExtractor:
         downloads = (info or {}).get("requested_downloads") or []
         path = Path(downloads[0]["filepath"]) if downloads else None
         if path is None or not path.is_file():
+            # yt-dlp skips, rather than fails, a file over max_filesize.
+            if self._max_filesize:
+                raise ExtractionFailed(Outcome.TOO_LARGE, MESSAGES[Outcome.TOO_LARGE])
             raise ExtractionFailed(Outcome.INTERNAL, "The download finished without a file.")
         return path
 

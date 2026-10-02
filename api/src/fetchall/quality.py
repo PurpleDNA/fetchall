@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from fetchall.extractor import Format, MediaInfo
+from fetchall.limits import Caps
 
 
 @dataclass(frozen=True)
@@ -14,7 +15,19 @@ class QualityOption:
     audio_only: bool = False
 
 
-def quality_options(media: MediaInfo) -> list[QualityOption]:
+def quality_options(media: MediaInfo, caps: Caps | None = None) -> list[QualityOption]:
+    options = _all_options(media)
+    if caps is None:
+        return options
+    return [
+        o
+        for o in options
+        if (o.height is None or o.height <= caps.max_height)
+        and (o.size is None or o.size <= caps.max_filesize_bytes)
+    ]
+
+
+def _all_options(media: MediaInfo) -> list[QualityOption]:
     audio = _best_audio(media.formats)
     by_height: dict[int, Format] = {}
     unsized: list[Format] = []

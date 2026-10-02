@@ -25,7 +25,7 @@ export type Media = {
 export type PreparedFile = { url: string; filename: string; size: number };
 
 export type JobEvent =
-  | { stage: "queued"; at: number }
+  | { stage: "queued"; at: number; position?: number | null }
   | { stage: "extracting"; at: number }
   | { stage: "downloading"; at: number; progress: number }
   | { stage: "merging"; at: number }
@@ -52,6 +52,8 @@ export type DownloadPlan = {
 
 export class InvalidLink extends Error {}
 
+export class Refused extends Error {}
+
 export async function createInspectJob(url: string): Promise<string> {
   const response = await fetch(`${API_URL}/jobs`, {
     method: "POST",
@@ -61,7 +63,10 @@ export async function createInspectJob(url: string): Promise<string> {
   if (response.status === 422) {
     throw new InvalidLink("Enter a full web link starting with http:// or https://");
   }
-  if (!response.ok) throw new Error(`Couldn't start the job (HTTP ${response.status}).`);
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    throw new Refused(detail?.detail ?? `Couldn't start the job (HTTP ${response.status}).`);
+  }
   return (await response.json()).id;
 }
 

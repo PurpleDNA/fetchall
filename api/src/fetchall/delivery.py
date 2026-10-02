@@ -6,6 +6,7 @@ from pathlib import PurePosixPath
 from urllib.parse import quote, urlsplit
 
 from fetchall.extractor import Format, MediaInfo
+from fetchall.limits import Caps
 from fetchall.quality import quality_options
 
 THUMBNAIL = "thumbnail"
@@ -32,14 +33,14 @@ class UnknownOption(Exception):
     pass
 
 
-def plan_delivery(media: MediaInfo, option_id: str) -> Plan:
+def plan_delivery(media: MediaInfo, option_id: str, caps: Caps | None = None) -> Plan:
     if option_id == THUMBNAIL:
         if not media.thumbnail:
             raise UnknownOption(option_id)
         ext = PurePosixPath(urlsplit(media.thumbnail).path).suffix.lstrip(".") or "jpg"
         return Plan(Delivery.STREAM, filename_for(media.title, None, ext), media.thumbnail, {})
 
-    option = next((o for o in quality_options(media) if o.id == option_id), None)
+    option = next((o for o in quality_options(media, caps) if o.id == option_id), None)
     if option is None:
         raise UnknownOption(option_id)
     formats = {f.id: f for f in media.formats}

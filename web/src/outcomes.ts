@@ -7,6 +7,7 @@ export const OUTCOME_TITLES: Record<string, string> = {
   too_large: "Too large",
   unsupported: "Can't download this link",
   internal: "Something went wrong",
+  busy: "Please wait",
 };
 
 export function outcomeTitle(outcome: string | undefined): string {

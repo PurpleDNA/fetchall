@@ -87,9 +87,11 @@ class Harness:
     upstream: FakeUpstream
     rt: runtime.Runtime = field(repr=False)
 
-    def run_jobs(self) -> None:
-        """Run every queued job to completion in this process, like a worker would."""
-        SimpleWorker([self.rt.queue], connection=self.rt.redis).work(burst=True)
+    def run_jobs(self, max_jobs: int | None = None) -> None:
+        SimpleWorker([self.rt.queue], connection=self.rt.redis).work(burst=True, max_jobs=max_jobs)
+
+    def as_ip(self, ip: str) -> TestClient:
+        return TestClient(self.client.app, client=(ip, 50000))
 
     def inspect(self, url: str) -> str:
         response = self.client.post("/jobs", json={"url": url})

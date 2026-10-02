@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 import anyio
 import httpx2
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
@@ -18,7 +18,8 @@ from starlette.background import BackgroundTask
 from fetchall import tasks
 from fetchall.delivery import Delivery, UnknownOption, content_disposition, plan_delivery
 from fetchall.extractor import Outcome
-from fetchall.jobs import TERMINAL, Event, failed
+from fetchall.jobs import QUEUED, TERMINAL, Event, failed, new_job_id
+from fetchall.limits import Refusal
 from fetchall.runtime import Runtime, build
 
 MAX_URL_LENGTH = 2048
@@ -58,6 +59,18 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
             await anyio.sleep(rt.settings.sweep_interval_seconds)
 
     app = FastAPI(title="fetchall", lifespan=lifespan)
+
+    @app.exception_handler(Refusal)
+    def refused(_: Request, e: Refusal):
+        headers = {"retry-after": str(e.retry_after)} if e.retry_after else None
+        return JSONResponse({"detail": e.message}, status_code=e.status, headers=headers)
+
+    def admit(request: Request, kind: str, url: str) -> str:
+        visitor = rt.limiter.visitor(request.client.host if request.client else "unknown")
+        job_id = new_job_id()
+        rt.limiter.admit(visitor, job_id, queued=rt.queue.count)
+        return rt.jobs.create(kind, url, owner=visitor, job_id=job_id)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=rt.settings.cors_origins,
@@ -74,12 +87,12 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         return {"status": "ok", "redis": "ok"}
 
     @app.post("/jobs", status_code=202)
-    def create_job(request: JobRequest):
-        job_id = rt.jobs.create("inspect", request.url)
+    def create_job(body: JobRequest, request: Request):
+        job_id = admit(request, "inspect", body.url)
         rt.queue.enqueue(
             tasks.inspect,
             job_id,
-            request.url,
+            body.url,
             job_id=job_id,
             job_timeout=rt.settings.inspect_timeout_seconds,
             result_ttl=rt.settings.job_ttl_seconds,
@@ -103,15 +116,22 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         job_id: Existing, last_event_id: Annotated[str | None, Header()] = None
     ) -> AsyncIterator[ServerSentEvent]:
         cursor = int(last_event_id) + 1 if last_event_id and last_event_id.isdigit() else 0
-        deadline = anyio.current_time() + rt.settings.job_ttl_seconds
+        deadline = anyio.current_time() + rt.settings.sse_max_seconds
+        last_position = None
         while anyio.current_time() < deadline:
-            await anyio.to_thread.run_sync(current_state, job_id)
+            state = await anyio.to_thread.run_sync(current_state, job_id)
             events = await anyio.to_thread.run_sync(rt.jobs.events, job_id, cursor)
             for event in events:
+                if event["stage"] == QUEUED and state.get("stage") == QUEUED:
+                    event = {**event, "position": state.get("position")}
+                    last_position = state.get("position")
                 yield ServerSentEvent(data=event, id=str(cursor))
                 cursor += 1
                 if event["stage"] in TERMINAL:
                     return
+            if not events and state.get("stage") == QUEUED and state["position"] != last_position:
+                last_position = state["position"]
+                yield ServerSentEvent(data=state)
             await anyio.sleep(rt.settings.sse_poll_seconds)
 
     def plan_for(job_id: str, option_id: str):
@@ -119,7 +139,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         if media is None:
             raise HTTPException(409, "This link hasn't finished inspecting yet.")
         try:
-            return plan_delivery(media, option_id)
+            return plan_delivery(media, option_id, rt.caps)
         except UnknownOption:
             raise HTTPException(404, "That option isn't available for this video.") from None
 
@@ -176,7 +196,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         )
 
     @app.post("/jobs/{job_id}/prepare/{option_id}", status_code=202)
-    def prepare(job_id: Existing, option_id: str):
+    def prepare(job_id: Existing, option_id: str, request: Request):
         plan = plan_for(job_id, option_id)
         if plan.delivery != Delivery.PREPARE:
             raise HTTPException(409, "This option doesn't need preparing; download it directly.")
@@ -184,7 +204,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         if rt.temp.over_ceiling():
             raise HTTPException(503, BUSY_MESSAGE)
         media = rt.jobs.load_media(job_id)
-        prepare_id = rt.jobs.create("prepare", media.url)
+        prepare_id = admit(request, "prepare", media.url)
         rt.queue.enqueue(
             tasks.prepare,
             prepare_id,
@@ -220,7 +240,16 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         if state.get("stage") not in TERMINAL and _worker_gave_up(job_id):
             rt.jobs.append(job_id, failed(Outcome.INTERNAL, WORKER_LOST_MESSAGE))
             state = rt.jobs.latest(job_id)
+        if state.get("stage") == QUEUED:
+            state = {**state, "position": _position(job_id)}
         return state
+
+    def _position(job_id: str) -> int | None:
+        try:
+            index = Job.fetch(job_id, connection=rt.redis).get_position()
+        except NoSuchJobError:
+            return None
+        return None if index is None else index + 1
 
     def _worker_gave_up(job_id: str) -> bool:
         try:

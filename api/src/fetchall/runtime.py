@@ -10,6 +10,7 @@ from rq import Queue
 from fetchall.config import Settings
 from fetchall.extractor import Extractor
 from fetchall.jobs import JobStore
+from fetchall.limits import Caps, Limiter
 from fetchall.temp import TempStore
 
 
@@ -20,6 +21,8 @@ class Runtime:
     queue: Queue
     jobs: JobStore
     temp: TempStore
+    limiter: Limiter
+    caps: Caps
     extractor: Extractor
     http_transport: httpx2.AsyncBaseTransport | None = None
 
@@ -46,12 +49,17 @@ def build(
     if extractor is None:
         from fetchall.ytdlp import YtDlpExtractor
 
-        extractor = YtDlpExtractor(proxy=settings.egress_proxy_url)
+        extractor = YtDlpExtractor(
+            proxy=settings.egress_proxy_url, max_filesize=settings.max_filesize_bytes
+        )
+    limiter = Limiter(redis, settings, clock)
     return Runtime(
         settings=settings,
         redis=redis,
         queue=Queue(settings.queue_name, connection=redis),
-        jobs=JobStore(redis, settings.job_ttl_seconds, clock),
+        jobs=JobStore(redis, settings.job_ttl_seconds, clock, on_finished=limiter.release),
+        limiter=limiter,
+        caps=Caps.from_settings(settings),
         temp=TempStore(
             redis,
             Path(settings.temp_dir),
