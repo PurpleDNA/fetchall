@@ -127,11 +127,15 @@ h1 {
 }
 
 .error {
-  margin: 0;
   padding: 12px 14px;
   color: var(--error);
   border: 1px solid currentColor;
   border-radius: 10px;
+}
+
+.error p {
+  margin: 4px 0 0;
+  color: var(--text);
 }
 
 .media {

@@ -8,12 +8,13 @@ import {
   subscribeToJob,
 } from "./api";
 import { MediaCard } from "./MediaCard";
+import { outcomeTitle } from "./outcomes";
 
 type View =
   | { kind: "idle" }
   | { kind: "working"; stage: "starting" | "queued" | "extracting" }
   | { kind: "ready"; jobId: string; media: Media }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; outcome?: string; message: string };
 
 const STAGE_LABELS = {
   starting: "Starting…",
@@ -47,14 +48,15 @@ export default function App() {
       const id = await createInspectJob(url.trim());
       unsubscribe.current = subscribeToJob(id, (e) => {
         if (e.stage === "ready" && e.media) setView({ kind: "ready", jobId: id, media: e.media });
-        else if (e.stage === "failed") setView({ kind: "failed", message: e.message });
+        else if (e.stage === "failed")
+          setView({ kind: "failed", outcome: e.outcome, message: e.message });
         else if (e.stage === "queued" || e.stage === "extracting")
           setView({ kind: "working", stage: e.stage });
       });
     } catch (error) {
       const message =
         error instanceof InvalidLink ? error.message : "Couldn't reach fetchall. Try again.";
-      setView({ kind: "failed", message });
+      setView({ kind: "failed", outcome: "unsupported", message });
     }
   }
 
@@ -91,9 +93,10 @@ export default function App() {
           </div>
         )}
         {view.kind === "failed" && (
-          <p className="error" role="alert">
-            {view.message}
-          </p>
+          <div className="error" role="alert">
+            <strong>{outcomeTitle(view.outcome)}</strong>
+            <p>{view.message}</p>
+          </div>
         )}
         {view.kind === "ready" && <MediaCard jobId={view.jobId} media={view.media} />}
       </section>

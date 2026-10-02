@@ -5,8 +5,8 @@ from urllib.parse import parse_qs, urlsplit
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
-from fetchall.egress.proxy import REFUSAL_PHRASE
 from fetchall.extractor import ExtractionFailed, Format, MediaInfo, Outcome, Progress
+from fetchall.failures import classify
 
 MERGE_STEPS = {"Merger", "FFmpegVideoRemuxer", "FFmpegFixupM3u8"}
 
@@ -127,11 +127,3 @@ def _format(f: dict[str, Any], site: str) -> Format:
         headers=dict(f.get("http_headers") or {}),
         vcodec=None if f.get("vcodec") in (None, "none") else f["vcodec"],
     )
-
-
-def classify(error: str) -> ExtractionFailed:
-    if REFUSAL_PHRASE in error:
-        return ExtractionFailed(Outcome.UNSUPPORTED, "That address isn't on the public internet.")
-    if "Unsupported URL" in error:
-        return ExtractionFailed(Outcome.NO_MEDIA, "No downloadable video was found at that link.")
-    return ExtractionFailed(Outcome.INTERNAL, "Something went wrong fetching that link.")
