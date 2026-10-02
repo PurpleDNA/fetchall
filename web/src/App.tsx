@@ -4,6 +4,7 @@ import {
   fetchHealth,
   type Health,
   InvalidLink,
+  Refused,
   type Media,
   subscribeToJob,
 } from "./api";
@@ -12,7 +13,7 @@ import { outcomeTitle } from "./outcomes";
 
 type View =
   | { kind: "idle" }
-  | { kind: "working"; stage: "starting" | "queued" | "extracting" }
+  | { kind: "working"; stage: "starting" | "queued" | "extracting"; position?: number | null }
   | { kind: "ready"; jobId: string; media: Media }
   | { kind: "failed"; outcome?: string; message: string };
 
@@ -50,10 +51,15 @@ export default function App() {
         if (e.stage === "ready" && e.media) setView({ kind: "ready", jobId: id, media: e.media });
         else if (e.stage === "failed")
           setView({ kind: "failed", outcome: e.outcome, message: e.message });
-        else if (e.stage === "queued" || e.stage === "extracting")
-          setView({ kind: "working", stage: e.stage });
+        else if (e.stage === "queued")
+          setView({ kind: "working", stage: "queued", position: e.position });
+        else if (e.stage === "extracting") setView({ kind: "working", stage: "extracting" });
       });
     } catch (error) {
+      if (error instanceof Refused) {
+        setView({ kind: "failed", outcome: "busy", message: error.message });
+        return;
+      }
       const message =
         error instanceof InvalidLink ? error.message : "Couldn't reach fetchall. Try again.";
       setView({ kind: "failed", outcome: "unsupported", message });
@@ -89,7 +95,10 @@ export default function App() {
         {view.kind === "working" && (
           <div className="progress" role="status">
             <div className="bar" />
-            <span>{STAGE_LABELS[view.stage]}</span>
+            <span>
+              {STAGE_LABELS[view.stage]}
+              {view.stage === "queued" && view.position ? ` You're number ${view.position}.` : ""}
+            </span>
           </div>
         )}
         {view.kind === "failed" && (

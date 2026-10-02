@@ -184,3 +184,26 @@ test("downloads the thumbnail", async () => {
   await vi.waitFor(() => expect(click).toHaveBeenCalled());
   expect((click.mock.contexts[0] as HTMLAnchorElement).download).toBe("A short film.jpg");
 });
+
+test("shows the place in line while queued", async () => {
+  const source = await startJob();
+
+  act(() => source.emit({ stage: "queued", at: 1, position: 3 }));
+
+  expect(screen.getByText("Waiting in line… You're number 3.")).toBeInTheDocument();
+});
+
+test.each([
+  [429, "You've reached the limit of 10 downloads an hour. Try again in about 12 minutes."],
+  [429, "You already have a job in progress. Wait for it to finish, then try again."],
+  [503, "fetchall is busy right now. Try again in a minute or two."],
+])("explains a %i refusal", async (status, detail) => {
+  stubFetch({ ...healthy, "POST /jobs": json({ detail }, status) });
+  render(<App />);
+
+  paste("https://video.example/watch/1");
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Please wait");
+  expect(alert).toHaveTextContent(detail);
+});

@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     inspect_timeout_seconds: int = 60
     job_ttl_seconds: int = 3600
     sse_poll_seconds: float = 0.5
+    sse_max_seconds: float = 300
+
+    max_concurrent_jobs: int = 2
+    max_queued_jobs: int = 20
+    jobs_per_ip_per_hour: int = 10
+    max_height: int = 1080
+    max_duration_seconds: int = 3600
+    max_filesize_bytes: int = 1_000_000_000
+    ip_hash_salt: str = "dev-only-salt"
 
     prepare_timeout_seconds: int = 900
     temp_dir: str = "/tmp/fetchall"

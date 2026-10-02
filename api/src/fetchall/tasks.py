@@ -7,6 +7,7 @@ from rq.timeouts import JobTimeoutException
 from fetchall import runtime
 from fetchall.extractor import ExtractionFailed, MediaInfo, Outcome
 from fetchall.jobs import DOWNLOADING, EXTRACTING, MERGING, READY, failed
+from fetchall.limits import Caps
 from fetchall.quality import quality_options
 
 log = logging.getLogger(__name__)
@@ -30,8 +31,12 @@ def inspect(job_id: str, url: str) -> None:
         log.exception("inspect crashed for job %s", job_id)
         rt.jobs.append(job_id, failed(Outcome.INTERNAL, CRASH_MESSAGE))
         return
+    too_large = _over_caps(media, rt.caps)
+    if too_large:
+        rt.jobs.append(job_id, failed(Outcome.TOO_LARGE, too_large))
+        return
     rt.jobs.save_media(job_id, media)
-    rt.jobs.append(job_id, {"stage": READY, "media": present(media)})
+    rt.jobs.append(job_id, {"stage": READY, "media": present(media, rt.caps)})
 
 
 def prepare(
@@ -85,7 +90,15 @@ def _throttled(emit, min_interval: float = 0.5):
     return report
 
 
-def present(media: MediaInfo) -> dict:
+def _over_caps(media: MediaInfo, caps: Caps) -> str | None:
+    if media.duration and media.duration > caps.max_duration_seconds:
+        return f"Videos longer than {caps.max_duration_seconds // 60} minutes aren't supported."
+    if not quality_options(media, caps):
+        return "Every version of this video is over fetchall's size limits."
+    return None
+
+
+def present(media: MediaInfo, caps: Caps | None = None) -> dict:
     return {
         "title": media.title,
         "url": media.url,
@@ -94,5 +107,5 @@ def present(media: MediaInfo) -> dict:
         "duration": media.duration,
         "thumbnail": media.thumbnail,
         "age_limit": media.age_limit,
-        "options": [asdict(o) for o in quality_options(media)],
+        "options": [asdict(o) for o in quality_options(media, caps)],
     }
