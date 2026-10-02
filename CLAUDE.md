@@ -13,3 +13,8 @@ Uses the five default triage labels: `needs-triage`, `needs-info`, `ready-for-ag
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Coding standards
+
+- Keep code comments to a minimum. Prefer clear names; comment only a non-obvious *why* (a security, protocol or platform constraint). No docstrings that restate the name.
+- Behaviour is tested through the public seams described in the spec (#1): the HTTP API with a fake Extractor, and the egress proxy with a fake resolver/connector.

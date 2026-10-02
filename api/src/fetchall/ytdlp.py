@@ -1,11 +1,10 @@
-"""yt-dlp implementation of the Extractor."""
-
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
+from fetchall.egress.proxy import REFUSAL_PHRASE
 from fetchall.extractor import ExtractionFailed, Format, MediaInfo, Outcome
 
 BASE_OPTIONS: dict[str, Any] = {
@@ -14,30 +13,27 @@ BASE_OPTIONS: dict[str, Any] = {
     "noprogress": True,
     "skip_download": True,
     "noplaylist": True,
-    # Don't resolve every entry when a link turns out to be a playlist; we refuse those anyway.
     "extract_flat": "in_playlist",
     "socket_timeout": 15,
 }
 
 
 class YtDlpExtractor:
-    def __init__(self, options: dict[str, Any] | None = None):
-        self._options = {**BASE_OPTIONS, **(options or {})}
+    def __init__(self, proxy: str | None = None, options: dict[str, Any] | None = None):
+        self._options = {**BASE_OPTIONS, **({"proxy": proxy} if proxy else {}), **(options or {})}
 
     def inspect(self, url: str) -> MediaInfo:
         with YoutubeDL(self._options) as ydl:
             try:
                 info = ydl.extract_info(url, download=False)
             except DownloadError as e:
-                # Mapped to specific outcomes by the failure classifier (#6).
-                raise ExtractionFailed(Outcome.INTERNAL, str(e)) from e
+                raise classify(str(e)) from e
         if not info:
             raise ExtractionFailed(Outcome.NO_MEDIA, "No video was found at that link.")
         return normalise(ydl.sanitize_info(info))
 
 
 def normalise(info: dict[str, Any]) -> MediaInfo:
-    """Turn a yt-dlp info dict into MediaInfo, keeping only formats fetchall can deliver."""
     if info.get("_type") in ("playlist", "multi_video"):
         raise ExtractionFailed(
             Outcome.UNSUPPORTED, "Playlists aren't supported. Paste a link to a single video."
@@ -85,3 +81,11 @@ def _format(f: dict[str, Any], site: str) -> Format:
         single_file=protocol in ("http", "https"),
         ip_bound=site.lower() == "youtube" or "ip" in parse_qs(urlsplit(url).query),
     )
+
+
+def classify(error: str) -> ExtractionFailed:
+    if REFUSAL_PHRASE in error:
+        return ExtractionFailed(Outcome.UNSUPPORTED, "That address isn't on the public internet.")
+    if "Unsupported URL" in error:
+        return ExtractionFailed(Outcome.NO_MEDIA, "No downloadable video was found at that link.")
+    return ExtractionFailed(Outcome.INTERNAL, "Something went wrong fetching that link.")

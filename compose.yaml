@@ -1,7 +1,14 @@
 # Local development stack: `docker compose up`
+x-backend: &backend
+  build: ./api
+  env_file:
+    - path: .env
+      required: false
+
 services:
   redis:
     image: redis:8-alpine
+    networks: [internal]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -9,29 +16,37 @@ services:
       retries: 5
 
   api:
-    build: ./api
-    env_file:
-      - path: .env
-        required: false
+    <<: *backend
     environment:
       FETCHALL_REDIS_URL: redis://redis:6379/0
+    networks: [internal, outside]
     ports:
       - "8000:8000"
     depends_on:
       redis:
         condition: service_healthy
 
+  # The worker has no route to the internet; its only way out is the egress proxy.
   worker:
-    build: ./api
+    <<: *backend
     command: ["python", "-m", "fetchall.worker"]
-    env_file:
-      - path: .env
-        required: false
     environment:
       FETCHALL_REDIS_URL: redis://redis:6379/0
+      FETCHALL_EGRESS_PROXY_URL: http://egress:8888
+      HTTP_PROXY: http://egress:8888
+      HTTPS_PROXY: http://egress:8888
+      NO_PROXY: redis
+    networks: [internal]
     depends_on:
       redis:
         condition: service_healthy
+      egress:
+        condition: service_started
+
+  egress:
+    <<: *backend
+    command: ["python", "-m", "fetchall.egress"]
+    networks: [internal, outside]
 
   web:
     image: node:22-alpine
@@ -39,8 +54,14 @@ services:
     command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
     environment:
       VITE_API_URL: http://localhost:8000
+    networks: [outside]
     ports:
       - "5173:5173"
     volumes:
       - ./web:/app
       - /app/node_modules
+
+networks:
+  internal:
+    internal: true
+  outside: {}

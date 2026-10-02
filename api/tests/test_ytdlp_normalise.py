@@ -1,9 +1,7 @@
-"""normalise() is the contract between yt-dlp's info dicts and fetchall's MediaInfo."""
-
 import pytest
 
 from fetchall.extractor import ExtractionFailed, Outcome
-from fetchall.ytdlp import normalise
+from fetchall.ytdlp import YtDlpExtractor, classify, normalise
 
 GOOGLEVIDEO = "https://rr1.googlevideo.com/videoplayback?expire=1&ip=203.0.113.9&itag="
 
@@ -148,3 +146,28 @@ def test_drm_only_media_is_drm():
         normalise(youtube_info(formats=drm))
 
     assert e.value.outcome == Outcome.DRM
+
+
+@pytest.mark.parametrize(
+    ("error", "outcome"),
+    [
+        ("ERROR: Unsupported URL: https://example.com/", Outcome.NO_MEDIA),
+        (
+            "ERROR: Unable to connect to proxy: Tunnel connection failed: 403 Blocked by fetchall egress policy",
+            Outcome.UNSUPPORTED,
+        ),
+        (
+            "ERROR: HTTP Error 403: Blocked by fetchall egress policy",
+            Outcome.UNSUPPORTED,
+        ),
+        ("ERROR: something unexpected", Outcome.INTERNAL),
+    ],
+)
+def test_classifies_yt_dlp_errors(error, outcome):
+    assert classify(error).outcome == outcome
+
+
+def test_routes_every_request_through_the_egress_proxy():
+    extractor = YtDlpExtractor(proxy="http://egress:8888")
+
+    assert extractor._options["proxy"] == "http://egress:8888"

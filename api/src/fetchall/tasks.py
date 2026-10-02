@@ -1,5 +1,3 @@
-"""Job functions executed by RQ workers, each in its own forked process."""
-
 import logging
 from dataclasses import asdict
 
@@ -25,7 +23,6 @@ def inspect(job_id: str, url: str) -> None:
         rt.jobs.append(job_id, failed(e.outcome, e.message))
         return
     except JobTimeoutException:
-        # Raised inside the job by RQ when the hard timeout fires.
         rt.jobs.append(job_id, failed(Outcome.INTERNAL, TIMEOUT_MESSAGE))
         return
     except Exception:
@@ -36,7 +33,6 @@ def inspect(job_id: str, url: str) -> None:
 
 
 def present(media: MediaInfo) -> dict:
-    """What the visitor sees: the media summary plus quality choices, not raw formats."""
     return {
         "title": media.title,
         "url": media.url,

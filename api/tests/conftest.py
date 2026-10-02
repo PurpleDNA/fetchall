@@ -16,8 +16,6 @@ FRONTEND = "http://localhost:5173"
 
 
 class FakeExtractor:
-    """Scripted stand-in for yt-dlp: maps a URL to MediaInfo, an exception, or a callable."""
-
     def __init__(self):
         self.script: dict[str, MediaInfo | Exception | Callable[[], MediaInfo]] = {}
 

@@ -1,5 +1,3 @@
-"""The choices a visitor sees after inspecting a link."""
-
 from dataclasses import dataclass
 
 from fetchall.extractor import Format, MediaInfo
@@ -16,7 +14,6 @@ class QualityOption:
 
 
 def quality_options(media: MediaInfo) -> list[QualityOption]:
-    """One option per available height (best first), then audio-only when available."""
     audio = _best_audio(media.formats)
     by_height: dict[int, Format] = {}
     unsized: list[Format] = []
@@ -57,7 +54,6 @@ def _video_option(id: str, label: str, f: Format, audio: Format | None) -> Quali
 
 
 def _preference(f: Format) -> tuple:
-    # Prefer formats that need no merge, then plain files, then bigger (higher bitrate) ones.
     return (f.has_audio, f.single_file, f.filesize or 0)
 
 

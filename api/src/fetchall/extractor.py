@@ -1,16 +1,9 @@
-"""The Extractor boundary: everything fetchall knows about a link comes through here.
-
-The real implementation wraps yt-dlp (see `fetchall.ytdlp`); tests use a fake with the same shape.
-"""
-
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
 
 class Outcome(StrEnum):
-    """Closed set of ways a job can fail. Only BLOCKED is eligible for proxy fallback."""
-
     BLOCKED = "blocked"
     LOGIN_REQUIRED = "login_required"
     NOT_FOUND = "not_found"
@@ -36,9 +29,8 @@ class Format:
     has_video: bool
     has_audio: bool
     filesize: int | None
-    # A single file fetchable over plain HTTP(S), as opposed to HLS/DASH segments.
     single_file: bool
-    # The media URL only works from the IP that extracted it (e.g. YouTube).
+    # The media URL only works from the IP that extracted it (YouTube).
     ip_bound: bool
 
 
@@ -55,6 +47,4 @@ class MediaInfo:
 
 
 class Extractor(Protocol):
-    def inspect(self, url: str) -> MediaInfo:
-        """Return media info for `url`, or raise ExtractionFailed."""
-        ...
+    def inspect(self, url: str) -> MediaInfo: ...
