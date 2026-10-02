@@ -13,6 +13,8 @@ from fetchall.joblog import JobLog
 from fetchall.jobs import READY, Event, JobStore
 from fetchall.limits import Caps, Limiter
 from fetchall.policy import PolicyFile
+from fetchall.proxybudget import ProxyBudget
+from fetchall.routes import SERVER, egress_url
 from fetchall.temp import TempStore
 
 
@@ -25,14 +27,17 @@ class Runtime:
     temp: TempStore
     limiter: Limiter
     caps: Caps
+    proxy_caps: Caps
+    proxy_budget: ProxyBudget
     policy: PolicyFile
     joblog: JobLog
     extractor: Extractor
     http_transport: httpx2.AsyncBaseTransport | None = None
 
-    def http_client(self) -> httpx2.AsyncClient:
+    def http_client(self, route: str = SERVER) -> httpx2.AsyncClient:
+        egress = self.settings.egress_proxy_url
         return httpx2.AsyncClient(
-            proxy=None if self.http_transport else self.settings.egress_proxy_url,
+            proxy=None if self.http_transport or not egress else egress_url(egress, route),
             transport=self.http_transport,
             timeout=httpx2.Timeout(30, read=self.settings.egress_idle_timeout_seconds),
             follow_redirects=True,
@@ -88,6 +93,12 @@ def build(
         joblog=joblog,
         limiter=limiter,
         caps=Caps.from_settings(settings),
+        proxy_caps=Caps(
+            settings.proxy_max_height,
+            settings.proxy_max_duration_seconds,
+            settings.proxy_max_filesize_bytes,
+        ),
+        proxy_budget=ProxyBudget(redis, settings, clock),
         policy=PolicyFile(Path(settings.policy_file)),
         temp=TempStore(
             redis,

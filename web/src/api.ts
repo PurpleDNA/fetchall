@@ -20,6 +20,7 @@ export type Media = {
   thumbnail: string | null;
   age_limit: number;
   age_restricted: boolean;
+  notice?: string | null;
   options: QualityOption[];
 };
 

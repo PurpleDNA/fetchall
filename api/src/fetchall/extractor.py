@@ -57,8 +57,15 @@ Progress = Callable[[str, float | None], None]
 
 
 class Extractor(Protocol):
-    def inspect(self, url: str) -> MediaInfo: ...
+    def inspect(self, url: str, route: str = "server") -> MediaInfo: ...
 
     def download(
-        self, url: str, format_ids: tuple[str, ...], container: str, dest: Path, progress: Progress
+        self,
+        url: str,
+        format_ids: tuple[str, ...],
+        container: str,
+        dest: Path,
+        progress: Progress,
+        route: str = "server",
+        max_filesize: int | None = None,
     ) -> Path: ...

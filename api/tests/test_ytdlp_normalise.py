@@ -172,3 +172,17 @@ def test_the_po_token_plugin_is_installed():
     load_all_plugins()
 
     assert "BgUtilHTTP" in _pot_providers.value
+
+
+def test_proxy_routes_reach_egress_with_the_route_as_the_username():
+    from fetchall.routes import egress_url
+
+    assert egress_url("http://egress:8888", "server") == "http://egress:8888"
+    assert egress_url("http://egress:8888", "proxy-abc") == "http://proxy-abc:x@egress:8888"
+
+
+def test_extraction_on_a_proxy_route_uses_the_routed_egress_url():
+    extractor = YtDlpExtractor(proxy="http://egress:8888")
+
+    assert extractor._routed("proxy-abc")["proxy"] == "http://proxy-abc:x@egress:8888"
+    assert extractor._routed("server")["proxy"] == "http://egress:8888"

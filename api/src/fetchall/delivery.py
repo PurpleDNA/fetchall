@@ -8,6 +8,7 @@ from urllib.parse import quote, urlsplit
 from fetchall.extractor import Format, MediaInfo
 from fetchall.limits import Caps
 from fetchall.quality import quality_options
+from fetchall.routes import SERVER
 
 THUMBNAIL = "thumbnail"
 HEADERS_THE_BROWSER_CANNOT_SEND = {"cookie", "referer", "authorization", "origin"}
@@ -27,13 +28,16 @@ class Plan:
     headers: dict[str, str] | None = None
     format_ids: tuple[str, ...] = ()
     container: str = ""
+    height: int | None = None
 
 
 class UnknownOption(Exception):
     pass
 
 
-def plan_delivery(media: MediaInfo, option_id: str, caps: Caps | None = None) -> Plan:
+def plan_delivery(
+    media: MediaInfo, option_id: str, caps: Caps | None = None, route: str = SERVER
+) -> Plan:
     if option_id == THUMBNAIL:
         if not media.thumbnail:
             raise UnknownOption(option_id)
@@ -51,10 +55,16 @@ def plan_delivery(media: MediaInfo, option_id: str, caps: Caps | None = None) ->
     if option.needs_merge or not first.single_file:
         container = "m4a" if option.audio_only else "mp4"
         filename = filename_for(media.title, label, container)
-        return Plan(Delivery.PREPARE, filename, format_ids=option.format_ids, container=container)
+        return Plan(
+            Delivery.PREPARE,
+            filename,
+            format_ids=option.format_ids,
+            container=container,
+            height=option.height,
+        )
 
     filename = filename_for(media.title, label, first.ext)
-    if _browser_can_fetch(first):
+    if route == SERVER and _browser_can_fetch(first):
         return Plan(Delivery.DIRECT, filename, first.url, first.headers)
     return Plan(Delivery.STREAM, filename, first.url, first.headers)
 

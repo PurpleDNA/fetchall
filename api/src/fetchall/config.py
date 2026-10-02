@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     egress_proxy_url: str | None = None
     pot_provider_url: str | None = None
     youtube_player_clients: list[str] = ["default", "mweb"]
+
+    # Residential proxy URL with a {session} placeholder for sticky sessions; a secret.
+    proxy_url: str | None = None
+    proxy_domains: list[str] = ["youtube.com", "youtu.be"]
+    proxy_max_height: int = 720
+    proxy_max_duration_seconds: int = 900
+    proxy_max_filesize_bytes: int = 200_000_000
+    proxy_jobs_per_ip_per_day: int = 3
+    proxy_daily_bytes: int = 300_000_000
     egress_host: str = "0.0.0.0"
     egress_port: int = 8888
     egress_max_bytes: int = 1_500_000_000

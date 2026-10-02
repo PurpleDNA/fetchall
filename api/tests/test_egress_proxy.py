@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import ipaddress
 from contextlib import asynccontextmanager
 
@@ -227,3 +228,188 @@ async def test_stalled_transfers_are_closed(internet):
 
     assert reply.endswith(b"partial")
     assert loop.time() - started < 3
+
+
+class FakeResidentialProxy:
+    def __init__(self):
+        self.connects: list[tuple[str, str]] = []
+
+    async def handle(self, reader, writer):
+        head = (await reader.readuntil(b"\r\n\r\n")).decode()
+        target = head.split(" ")[1]
+        auth = next(
+            (
+                line.split(": ", 1)[1]
+                for line in head.split("\r\n")
+                if line.lower().startswith("proxy-authorization")
+            ),
+            "",
+        )
+        self.connects.append((target, base64.b64decode(auth.removeprefix("Basic ")).decode()))
+        writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+        await writer.drain()
+        request = await reader.readuntil(b"\r\n\r\n")
+        body = b"via residential: " + request.split(b"\r\n")[0]
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Length: "
+            + str(len(body)).encode()
+            + b"\r\nConnection: close\r\n\r\n"
+            + body
+        )
+        await writer.drain()
+        writer.close()
+
+
+def route_header(route: str) -> bytes:
+    token = base64.b64encode(f"{route}:x".encode())
+    return b"Proxy-Authorization: Basic " + token + b"\r\n"
+
+
+@asynccontextmanager
+async def chained_proxy(
+    internet, residential, *, allowed=lambda: True, counted=None, upstream=True
+):
+    async with serve(residential.handle) as port:
+
+        async def connect_upstream(host, upstream_port):
+            assert (host, upstream_port) == ("gw.proxy.test", 823)
+            return await asyncio.open_connection("127.0.0.1", port)
+
+        template = "http://user-session-{session}:secret@gw.proxy.test:823"
+        proxy = EgressProxy(
+            resolve=internet.resolve,
+            connect=internet.connect,
+            upstream_for=(lambda session: template.format(session=session))
+            if upstream
+            else (lambda s: None),
+            connect_upstream=connect_upstream,
+            proxy_allowed=allowed,
+            on_proxy_bytes=(counted.append if counted is not None else lambda n: None),
+        )
+        server = await asyncio.start_server(proxy.handle, "127.0.0.1", 0)
+        async with server:
+            yield f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
+
+
+async def test_proxy_routes_go_through_the_residential_proxy_with_a_sticky_session(internet):
+    internet.dns["public.test"] = [[PUBLIC_IP]]
+    residential = FakeResidentialProxy()
+    async with chained_proxy(internet, residential) as proxy:
+        first = await raw(
+            proxy,
+            b"GET http://public.test/a HTTP/1.1\r\nHost: public.test\r\n"
+            + route_header("proxy-abc")
+            + b"\r\n",
+        )
+        second = await raw(
+            proxy,
+            b"GET http://public.test/b HTTP/1.1\r\nHost: public.test\r\n"
+            + route_header("proxy-abc")
+            + b"\r\n",
+        )
+        other = await raw(
+            proxy,
+            b"GET http://public.test/c HTTP/1.1\r\nHost: public.test\r\n"
+            + route_header("proxy-xyz")
+            + b"\r\n",
+        )
+
+    assert first.endswith(b"via residential: GET /a HTTP/1.1")
+    assert second.endswith(b"via residential: GET /b HTTP/1.1")
+    assert other.endswith(b"via residential: GET /c HTTP/1.1")
+    assert residential.connects == [
+        ("public.test:80", "user-session-abc:secret"),
+        ("public.test:80", "user-session-abc:secret"),
+        ("public.test:80", "user-session-xyz:secret"),
+    ]
+    assert internet.connected_to == []
+
+
+async def test_proxy_routes_tunnel_https_through_the_residential_proxy(internet):
+    internet.dns["public.test"] = [[PUBLIC_IP]]
+    residential = FakeResidentialProxy()
+    async with chained_proxy(internet, residential) as proxy:
+        reply = await raw(
+            proxy,
+            b"CONNECT public.test:443 HTTP/1.1\r\n" + route_header("proxy-abc") + b"\r\n"
+            b"GET /secure HTTP/1.1\r\nHost: public.test\r\n\r\n",
+        )
+
+    assert reply.startswith(b"HTTP/1.1 200 Connection established")
+    assert reply.endswith(b"via residential: GET /secure HTTP/1.1")
+    assert residential.connects == [("public.test:443", "user-session-abc:secret")]
+
+
+async def test_proxy_routes_are_still_ssrf_checked(internet):
+    internet.dns["internal.test"] = [["10.0.0.5"]]
+    residential = FakeResidentialProxy()
+    async with chained_proxy(internet, residential) as proxy:
+        reply = await raw(
+            proxy, b"GET http://internal.test/ HTTP/1.1\r\n" + route_header("proxy-abc") + b"\r\n"
+        )
+
+    assert reply.startswith(b"HTTP/1.1 403")
+    assert residential.connects == []
+
+
+@pytest.mark.parametrize(
+    ("allowed", "upstream"),
+    [(lambda: False, True), (lambda: True, False)],
+    ids=["over-budget", "not-configured"],
+)
+async def test_proxy_routes_are_refused_when_the_tier_is_unavailable(internet, allowed, upstream):
+    internet.dns["public.test"] = [[PUBLIC_IP]]
+    residential = FakeResidentialProxy()
+    async with chained_proxy(internet, residential, allowed=allowed, upstream=upstream) as proxy:
+        reply = await raw(
+            proxy, b"GET http://public.test/ HTTP/1.1\r\n" + route_header("proxy-abc") + b"\r\n"
+        )
+
+    assert reply.startswith(b"HTTP/1.1 403")
+    assert residential.connects == []
+
+
+async def test_proxied_bytes_are_counted(internet):
+    internet.dns["public.test"] = [[PUBLIC_IP]]
+    counted: list[int] = []
+    async with chained_proxy(internet, FakeResidentialProxy(), counted=counted) as proxy:
+        reply = await raw(
+            proxy, b"GET http://public.test/a HTTP/1.1\r\n" + route_header("proxy-abc") + b"\r\n"
+        )
+
+    assert sum(counted) >= len(reply)
+
+
+async def test_server_route_traffic_is_not_counted_or_proxied(internet):
+    internet.dns["public.test"] = [[PUBLIC_IP]]
+    counted: list[int] = []
+    residential = FakeResidentialProxy()
+    async with serve(http_handler(body=b"direct")) as port:
+        internet.servers[(PUBLIC_IP, 80)] = port
+        async with chained_proxy(internet, residential, counted=counted) as proxy:
+            reply = await raw(
+                proxy, b"GET http://public.test/ HTTP/1.1\r\nHost: public.test\r\n\r\n"
+            )
+
+    assert reply.endswith(b"direct")
+    assert (residential.connects, counted) == ([], [])
+
+
+async def test_an_unexpected_failure_is_answered_not_dropped(internet):
+    internet.dns["public.test"] = [[PUBLIC_IP]]
+
+    proxy = EgressProxy(
+        resolve=internet.resolve,
+        connect=internet.connect,
+        upstream_for=lambda s: "http://u:p@gw:1",
+        proxy_allowed=lambda: 1 / 0,
+    )
+    server = await asyncio.start_server(proxy.handle, "127.0.0.1", 0)
+    async with server:
+        port = server.sockets[0].getsockname()[1]
+        reply = await raw(
+            f"http://127.0.0.1:{port}",
+            b"GET http://public.test/ HTTP/1.1\r\n" + route_header("proxy-a") + b"\r\n",
+        )
+
+    assert reply.startswith(b"HTTP/1.1 502")

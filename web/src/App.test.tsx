@@ -256,3 +256,10 @@ test("the age confirmation lasts for the browser session", async () => {
   expect(screen.queryByRole("group", { name: "Age confirmation" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
 });
+
+test("shows why options are capped when the server is being limited", async () => {
+  const notice = "YouTube is limiting fetchall right now, so downloads are capped at 720p and 15 minutes.";
+  await readyWith({ notice });
+
+  expect(screen.getByText(notice)).toBeInTheDocument();
+});

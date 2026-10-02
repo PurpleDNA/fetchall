@@ -63,7 +63,12 @@ services:
   egress:
     <<: *backend
     command: ["python", "-m", "fetchall.egress"]
+    environment:
+      FETCHALL_REDIS_URL: redis://redis:6379/0
     networks: [internal, outside]
+    depends_on:
+      redis:
+        condition: service_healthy
 
   web:
     image: node:22-alpine

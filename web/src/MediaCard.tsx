@@ -65,6 +65,7 @@ export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
       <div className="media-body">
         <h2>{media.title}</h2>
         <p className="details">{details.join(" · ")}</p>
+        {media.notice && <p className="notice">{media.notice}</p>}
         {!confirmed && (
           <div className="age-gate" role="group" aria-label="Age confirmation">
             <p>This video is marked 18+. Confirm you're 18 or older to see the download options.</p>
