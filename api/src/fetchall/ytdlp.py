@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -5,7 +6,9 @@ from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
 from fetchall.egress.proxy import REFUSAL_PHRASE
-from fetchall.extractor import ExtractionFailed, Format, MediaInfo, Outcome
+from fetchall.extractor import ExtractionFailed, Format, MediaInfo, Outcome, Progress
+
+MERGE_STEPS = {"Merger", "FFmpegVideoRemuxer", "FFmpegFixupM3u8"}
 
 BASE_OPTIONS: dict[str, Any] = {
     "quiet": True,
@@ -31,6 +34,46 @@ class YtDlpExtractor:
         if not info:
             raise ExtractionFailed(Outcome.NO_MEDIA, "No video was found at that link.")
         return normalise(ydl.sanitize_info(info))
+
+    def download(
+        self, url: str, format_ids: tuple[str, ...], container: str, dest: Path, progress: Progress
+    ) -> Path:
+        fractions = dict.fromkeys(format_ids, 0.0)
+
+        def on_progress(d: dict[str, Any]) -> None:
+            format_id = str((d.get("info_dict") or {}).get("format_id", ""))
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+            if d["status"] == "finished":
+                fractions[format_id] = 1.0
+            elif d["status"] == "downloading" and total:
+                fractions[format_id] = min(d.get("downloaded_bytes", 0) / total, 1.0)
+            progress("downloading", sum(fractions.values()) / len(fractions))
+
+        def on_postprocess(d: dict[str, Any]) -> None:
+            if d["status"] == "started" and d.get("postprocessor") in MERGE_STEPS:
+                progress("merging", None)
+
+        options = {
+            **self._options,
+            "skip_download": False,
+            "format": "+".join(format_ids),
+            "paths": {"home": str(dest), "temp": str(dest)},
+            "outtmpl": "media.%(ext)s",
+            "merge_output_format": container,
+            "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": container}],
+            "progress_hooks": [on_progress],
+            "postprocessor_hooks": [on_postprocess],
+        }
+        with YoutubeDL(options) as ydl:
+            try:
+                info = ydl.extract_info(url, download=True)
+            except DownloadError as e:
+                raise classify(str(e)) from e
+        downloads = (info or {}).get("requested_downloads") or []
+        path = Path(downloads[0]["filepath"]) if downloads else None
+        if path is None or not path.is_file():
+            raise ExtractionFailed(Outcome.INTERNAL, "The download finished without a file.")
+        return path
 
 
 def normalise(info: dict[str, Any]) -> MediaInfo:
@@ -82,6 +125,7 @@ def _format(f: dict[str, Any], site: str) -> Format:
         ip_bound=site.lower() == "youtube" or "ip" in parse_qs(urlsplit(url).query),
         url=url,
         headers=dict(f.get("http_headers") or {}),
+        vcodec=None if f.get("vcodec") in (None, "none") else f["vcodec"],
     )
 
 

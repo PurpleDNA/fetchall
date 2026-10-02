@@ -46,9 +46,10 @@ export default function App() {
     try {
       const id = await createInspectJob(url.trim());
       unsubscribe.current = subscribeToJob(id, (e) => {
-        if (e.stage === "ready") setView({ kind: "ready", jobId: id, media: e.media });
+        if (e.stage === "ready" && e.media) setView({ kind: "ready", jobId: id, media: e.media });
         else if (e.stage === "failed") setView({ kind: "failed", message: e.message });
-        else setView({ kind: "working", stage: e.stage });
+        else if (e.stage === "queued" || e.stage === "extracting")
+          setView({ kind: "working", stage: e.stage });
       });
     } catch (error) {
       const message =

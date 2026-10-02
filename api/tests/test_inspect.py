@@ -191,3 +191,17 @@ def test_rejects_anything_but_a_web_link(harness, url):
 def test_unknown_jobs_are_not_found(harness):
     assert harness.client.get("/jobs/nope").status_code == 404
     assert harness.client.get("/jobs/nope/events").status_code == 404
+
+
+def test_h264_is_preferred_over_vp9_at_the_same_height_so_the_mp4_plays_everywhere(harness):
+    harness.extractor.script[URL] = media(
+        video(1080, audio=False, size=60 * MB, vcodec="vp9"),
+        video(1080, audio=False, size=50 * MB),
+        audio_only(size=3 * MB),
+    )
+    job_id = harness.inspect(URL)
+    harness.run_jobs()
+
+    option = harness.client.get(f"/jobs/{job_id}").json()["media"]["options"][0]
+
+    assert (option["id"], option["size"]) == ("1080p", 53 * MB)

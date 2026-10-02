@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -6,12 +7,13 @@ import anyio
 import httpx2
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, field_validator
 from redis.exceptions import RedisError
 from rq.exceptions import NoSuchJobError
 from rq.job import Job, JobStatus
+from starlette.background import BackgroundTask
 
 from fetchall import tasks
 from fetchall.delivery import Delivery, UnknownOption, content_disposition, plan_delivery
@@ -21,6 +23,10 @@ from fetchall.runtime import Runtime, build
 
 MAX_URL_LENGTH = 2048
 WORKER_LOST_MESSAGE = "The job stopped unexpectedly. Try again in a moment."
+BUSY_MESSAGE = (
+    "fetchall is busy preparing other downloads. Try again in a few minutes, "
+    "or pick a quality that doesn't need processing."
+)
 
 
 class JobRequest(BaseModel):
@@ -38,7 +44,20 @@ class JobRequest(BaseModel):
 
 def create_app(rt: Runtime | None = None) -> FastAPI:
     rt = rt or build()
-    app = FastAPI(title="fetchall")
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(sweep_forever)
+            yield
+            tg.cancel_scope.cancel()
+
+    async def sweep_forever():
+        while True:
+            await anyio.to_thread.run_sync(rt.temp.sweep)
+            await anyio.sleep(rt.settings.sweep_interval_seconds)
+
+    app = FastAPI(title="fetchall", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=rt.settings.cors_origins,
@@ -156,6 +175,45 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
             headers={**passed_on, "content-disposition": content_disposition(plan.filename)},
         )
 
+    @app.post("/jobs/{job_id}/prepare/{option_id}", status_code=202)
+    def prepare(job_id: Existing, option_id: str):
+        plan = plan_for(job_id, option_id)
+        if plan.delivery != Delivery.PREPARE:
+            raise HTTPException(409, "This option doesn't need preparing; download it directly.")
+        rt.temp.sweep()
+        if rt.temp.over_ceiling():
+            raise HTTPException(503, BUSY_MESSAGE)
+        media = rt.jobs.load_media(job_id)
+        prepare_id = rt.jobs.create("prepare", media.url)
+        rt.queue.enqueue(
+            tasks.prepare,
+            prepare_id,
+            media.url,
+            plan.format_ids,
+            plan.container,
+            plan.filename,
+            job_id=prepare_id,
+            job_timeout=rt.settings.prepare_timeout_seconds,
+            result_ttl=rt.settings.job_ttl_seconds,
+            failure_ttl=rt.settings.job_ttl_seconds,
+        )
+        return {"id": prepare_id, **current_state(prepare_id)}
+
+    @app.get("/files/{file_id}")
+    def prepared_file(file_id: str, range: Annotated[str | None, Header()] = None):
+        rt.temp.sweep()
+        prepared = rt.temp.get(file_id)
+        if prepared is None:
+            raise HTTPException(404, "This file has expired. Fetch the link again.")
+        done = (
+            BackgroundTask(rt.temp.discard, file_id) if _reaches_end(range, prepared.size) else None
+        )
+        return FileResponse(
+            prepared.path,
+            headers={"content-disposition": content_disposition(prepared.filename)},
+            background=done,
+        )
+
     def current_state(job_id: str) -> Event:
         # A worker killed mid-job never reports, so fall back to RQ's view of the job.
         state = rt.jobs.latest(job_id) or {}
@@ -172,3 +230,16 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         return status in (JobStatus.FAILED, JobStatus.STOPPED, JobStatus.CANCELED)
 
     return app
+
+
+def _reaches_end(range_header: str | None, size: int) -> bool:
+    # Only a response that serves the last byte completes the download; earlier ranges are resumes.
+    if not range_header:
+        return True
+    spec = range_header.removeprefix("bytes=").strip()
+    if "," in spec:
+        return False
+    start, _, end = spec.partition("-")
+    if not start:
+        return True
+    return not end or int(end) >= size - 1

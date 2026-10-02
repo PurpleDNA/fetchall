@@ -1,14 +1,37 @@
-import { useState } from "react";
-import { type Media, planDownload, saveFile } from "./api";
+import { useEffect, useRef, useState } from "react";
+import { type Media, planDownload, saveFile, startPrepare, subscribeToJob } from "./api";
 import { formatBytes, formatDuration } from "./format";
 
-const PREPARE_NOTE = "This quality needs processing on the server, which isn't available yet.";
+type Preparing = { stage: "queued" | "downloading" | "merging"; progress: number };
 
 export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
   const [choice, setChoice] = useState(media.options[0]?.id);
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState<Preparing | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const unsubscribe = useRef<(() => void) | null>(null);
   const details = [media.uploader, formatDuration(media.duration), media.site].filter(Boolean);
+
+  useEffect(() => () => unsubscribe.current?.(), []);
+
+  function prepare(optionId: string) {
+    return startPrepare(jobId, optionId).then((prepareId) => {
+      setPreparing({ stage: "queued", progress: 0 });
+      unsubscribe.current = subscribeToJob(prepareId, (e) => {
+        if (e.stage === "downloading") setPreparing({ stage: "downloading", progress: e.progress });
+        else if (e.stage === "merging") setPreparing({ stage: "merging", progress: 1 });
+        else if (e.stage === "ready" && e.file) {
+          setPreparing(null);
+          setBusy(false);
+          saveFile(e.file);
+        } else if (e.stage === "failed") {
+          setPreparing(null);
+          setBusy(false);
+          setNote(e.message);
+        }
+      });
+    });
+  }
 
   async function download(optionId: string | undefined) {
     if (!optionId) return;
@@ -16,13 +39,15 @@ export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
     setNote(null);
     try {
       const plan = await planDownload(jobId, optionId);
-      if (plan.delivery === "prepare") setNote(PREPARE_NOTE);
-      else saveFile(plan);
+      if (plan.delivery === "prepare") {
+        await prepare(optionId);
+        return;
+      }
+      saveFile(plan);
     } catch (error) {
       setNote((error as Error).message);
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   return (
@@ -33,7 +58,7 @@ export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
       <div className="media-body">
         <h2>{media.title}</h2>
         <p className="details">{details.join(" · ")}</p>
-        <fieldset className="options">
+        <fieldset className="options" disabled={busy}>
           <legend>Choose a quality</legend>
           {media.options.map((option) => (
             <label key={option.id} className="option">
@@ -59,6 +84,7 @@ export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
             </button>
           )}
         </div>
+        {preparing && <PrepareProgress {...preparing} />}
         {note && (
           <p className="note" role="status">
             {note}
@@ -66,5 +92,20 @@ export function MediaCard({ jobId, media }: { jobId: string; media: Media }) {
         )}
       </div>
     </article>
+  );
+}
+
+function PrepareProgress({ stage, progress }: Preparing) {
+  const label =
+    stage === "queued"
+      ? "Waiting in line…"
+      : stage === "merging"
+        ? "Merging video and audio…"
+        : `Downloading ${Math.round(progress * 100)}%`;
+  return (
+    <div className="prepare" role="status">
+      <progress max={1} value={stage === "queued" ? undefined : progress} />
+      <span>{label}</span>
+    </div>
   );
 }

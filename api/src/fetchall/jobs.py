@@ -11,6 +11,7 @@ from fetchall.extractor import Format, MediaInfo
 Event = dict[str, Any]
 
 QUEUED, EXTRACTING, READY, FAILED = "queued", "extracting", "ready", "failed"
+DOWNLOADING, MERGING = "downloading", "merging"
 TERMINAL = frozenset({READY, FAILED})
 
 
