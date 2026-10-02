@@ -1,9 +1,3 @@
-"""Job state: an append-only list of progress events per job, kept in Redis.
-
-The latest event is the job's current state. Event list indexes double as SSE event ids,
-so a reconnecting client resumes exactly where it left off.
-"""
-
 import json
 import secrets
 from collections.abc import Callable

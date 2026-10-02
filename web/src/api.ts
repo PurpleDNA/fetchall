@@ -42,7 +42,6 @@ export async function fetchHealth(): Promise<Health> {
 
 export class InvalidLink extends Error {}
 
-/** Start inspecting a link. Resolves to the job id. */
 export async function createInspectJob(url: string): Promise<string> {
   const response = await fetch(`${API_URL}/jobs`, {
     method: "POST",
@@ -56,10 +55,6 @@ export async function createInspectJob(url: string): Promise<string> {
   return (await response.json()).id;
 }
 
-/**
- * Follow a job's progress until it finishes. Uses the live event stream, and falls back to
- * polling if the stream drops. Returns a function that stops listening.
- */
 export function subscribeToJob(
   id: string,
   onEvent: (event: JobEvent) => void,
@@ -86,9 +81,7 @@ export function subscribeToJob(
     try {
       const response = await fetch(`${API_URL}/jobs/${id}`);
       if (response.ok) deliver(await response.json());
-    } catch {
-      // Network blip: try again on the next tick.
-    }
+    } catch {}
     if (!stopped) timer = setTimeout(poll, pollMs);
   };
 

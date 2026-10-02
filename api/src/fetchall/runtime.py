@@ -1,5 +1,3 @@
-"""Wires the pieces together once per process, so API and worker share one definition."""
-
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,7 +31,7 @@ def build(
     if extractor is None:
         from fetchall.ytdlp import YtDlpExtractor
 
-        extractor = YtDlpExtractor()
+        extractor = YtDlpExtractor(proxy=settings.egress_proxy_url)
     return Runtime(
         settings=settings,
         redis=redis,
@@ -47,7 +45,6 @@ _current: Runtime | None = None
 
 
 def current() -> Runtime:
-    """The runtime for this process; jobs running in the worker look it up here."""
     global _current
     if _current is None:
         _current = build()

@@ -1,6 +1,5 @@
 import { vi } from "vitest";
 
-/** Minimal EventSource stand-in: tests push messages or errors into the latest instance. */
 export class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onmessage: ((message: { data: string }) => void) | null = null;
@@ -37,7 +36,6 @@ export function installEventSource() {
 
 type Route = (init?: RequestInit) => Response | Promise<Response>;
 
-/** Stub fetch with handlers keyed by "METHOD path", e.g. "POST /jobs". */
 export function stubFetch(routes: Record<string, Route>) {
   const fetch = vi.fn(async (input: string, init?: RequestInit) => {
     const key = `${init?.method ?? "GET"} ${new URL(input).pathname}`;

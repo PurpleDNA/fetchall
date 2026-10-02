@@ -94,7 +94,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
             await anyio.sleep(rt.settings.sse_poll_seconds)
 
     def current_state(job_id: str) -> Event:
-        """Latest event, reconciled with RQ in case the worker died without reporting."""
+        # A worker killed mid-job never reports, so fall back to RQ's view of the job.
         state = rt.jobs.latest(job_id) or {}
         if state.get("stage") not in TERMINAL and _worker_gave_up(job_id):
             rt.jobs.append(job_id, failed(Outcome.INTERNAL, WORKER_LOST_MESSAGE))
