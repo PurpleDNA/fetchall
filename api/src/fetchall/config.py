@@ -1,4 +1,7 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEV_SALT = "dev-only-salt"
 
 
 class Settings(BaseSettings):
@@ -19,7 +22,10 @@ class Settings(BaseSettings):
     max_height: int = 1080
     max_duration_seconds: int = 3600
     max_filesize_bytes: int = 1_000_000_000
-    ip_hash_salt: str = "dev-only-salt"
+    environment: str = "development"
+    ip_hash_salt: str = DEV_SALT
+    job_log_path: str = "/tmp/fetchall-log/jobs.sqlite3"
+    job_log_retention_seconds: int = 7 * 24 * 3600
     policy_file: str = "/config/policy.toml"
 
     prepare_timeout_seconds: int = 900
@@ -35,3 +41,9 @@ class Settings(BaseSettings):
     egress_max_bytes: int = 1_500_000_000
     egress_idle_timeout_seconds: float = 30
     egress_max_duration_seconds: float = 3600
+
+    @model_validator(mode="after")
+    def production_needs_a_real_salt(self) -> "Settings":
+        if self.environment == "production" and self.ip_hash_salt == DEV_SALT:
+            raise ValueError("FETCHALL_IP_HASH_SALT must be set to a secret in production")
+        return self

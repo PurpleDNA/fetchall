@@ -14,12 +14,14 @@ from fetchall.quality import quality_options
 log = logging.getLogger(__name__)
 
 TIMEOUT_MESSAGE = "This took too long, so fetchall gave up. Try again in a moment."
+SERVER_TIER = "server"
 CRASH_MESSAGE = "Something went wrong on our side. Try again in a moment."
 
 
 def inspect(job_id: str, url: str) -> None:
     rt = runtime.current()
     rt.jobs.append(job_id, {"stage": EXTRACTING})
+    rt.jobs.annotate(job_id, tier=SERVER_TIER)
     try:
         media = rt.extractor.inspect(url)
     except ExtractionFailed as e:
@@ -32,6 +34,7 @@ def inspect(job_id: str, url: str) -> None:
         log.exception("inspect crashed for job %s", job_id)
         rt.jobs.append(job_id, failed(Outcome.INTERNAL, CRASH_MESSAGE))
         return
+    rt.jobs.annotate(job_id, site=media.site)
     policy = rt.policy.current()
     if policy.blocks_media(media):
         rt.jobs.append(job_id, failed(Outcome.UNSUPPORTED, UNAVAILABLE_MESSAGE))
@@ -46,9 +49,15 @@ def inspect(job_id: str, url: str) -> None:
 
 
 def prepare(
-    job_id: str, url: str, format_ids: tuple[str, ...], container: str, filename: str
+    job_id: str,
+    url: str,
+    format_ids: tuple[str, ...],
+    container: str,
+    filename: str,
+    site: str = "",
 ) -> None:
     rt = runtime.current()
+    rt.jobs.annotate(job_id, tier=SERVER_TIER, site=site)
     dest = rt.temp.reserve(job_id)
     report = _throttled(lambda event: rt.jobs.append(job_id, event))
     report({"stage": DOWNLOADING, "progress": 0.0}, force=True)
@@ -75,6 +84,7 @@ def prepare(
         rt.jobs.append(job_id, failed(Outcome.INTERNAL, CRASH_MESSAGE))
         return
     prepared = rt.temp.complete(job_id, path, filename)
+    rt.jobs.annotate(job_id, bytes=prepared.size)
     rt.jobs.append(
         job_id,
         {

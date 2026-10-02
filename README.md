@@ -40,6 +40,14 @@ The backend reads `FETCHALL_*` environment variables, or a `.env` file. See `.en
 
 `deploy/config/policy.toml` holds blocked URLs, domains and uploaders, plus the adult-domain list behind the 18+ gate. The API and worker reload it whenever it changes; no restart needed.
 
+## Job log
+
+Every finished job is logged (salted IP hash, URL, site, tier, outcome, bytes) for 7 days. Search it with:
+
+```sh
+docker compose exec api python -m fetchall.joblog youtube.com --limit 20
+```
+
 ## Tests
 
 ```sh
