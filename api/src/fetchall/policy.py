@@ -28,7 +28,7 @@ class Policy:
         )
 
     def blocks_url(self, url: str) -> bool:
-        return _normal_url(url) in self.blocked_urls or _on_domain(url, self.blocked_domains)
+        return _normal_url(url) in self.blocked_urls or on_domain(url, self.blocked_domains)
 
     def blocks_media(self, media: MediaInfo) -> bool:
         uploaders = {
@@ -38,7 +38,7 @@ class Policy:
 
     def is_adult(self, media: MediaInfo, submitted_url: str = "") -> bool:
         return media.age_limit >= 18 or any(
-            _on_domain(u, self.adult_domains) for u in (media.url, submitted_url) if u
+            on_domain(u, self.adult_domains) for u in (media.url, submitted_url) if u
         )
 
 
@@ -71,6 +71,6 @@ def _normal_url(url: str) -> str:
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, parts.query, ""))
 
 
-def _on_domain(url: str, domains: tuple[str, ...]) -> bool:
+def on_domain(url: str, domains: tuple[str, ...]) -> bool:
     host = (urlsplit(url.strip()).hostname or "").lower().strip(".")
     return any(host == d or host.endswith(f".{d}") for d in domains)

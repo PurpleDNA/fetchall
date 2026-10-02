@@ -21,6 +21,7 @@ from fetchall.extractor import Outcome
 from fetchall.jobs import QUEUED, TERMINAL, Event, failed, new_job_id
 from fetchall.limits import Refusal
 from fetchall.policy import UNAVAILABLE_MESSAGE
+from fetchall.routes import is_proxy
 from fetchall.runtime import Runtime, build
 
 MAX_URL_LENGTH = 2048
@@ -150,8 +151,10 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
             raise HTTPException(404, UNAVAILABLE_MESSAGE)
         if rt.jobs.is_adult(job_id) and not age_confirmed:
             raise HTTPException(403, AGE_CONFIRMATION_REQUIRED)
+        route = rt.jobs.route(job_id)
+        caps = rt.proxy_caps if is_proxy(route) else rt.caps
         try:
-            return plan_delivery(media, option_id, rt.caps)
+            return plan_delivery(media, option_id, caps, route)
         except UnknownOption:
             raise HTTPException(404, "That option isn't available for this video.") from None
 
@@ -176,7 +179,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         plan = await anyio.to_thread.run_sync(plan_for, job_id, option_id, age_confirmed)
         if plan.delivery != Delivery.STREAM:
             raise HTTPException(404, "This option isn't streamed by the server.")
-        client = rt.http_client()
+        client = rt.http_client(rt.jobs.route(job_id))
         headers = {**(plan.headers or {}), **({"Range": range} if range else {})}
         try:
             upstream = await client.send(
@@ -229,6 +232,8 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
             plan.container,
             plan.filename,
             media.site,
+            rt.jobs.route(job_id),
+            plan.height,
             job_id=prepare_id,
             job_timeout=rt.settings.prepare_timeout_seconds,
             result_ttl=rt.settings.job_ttl_seconds,

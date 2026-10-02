@@ -49,6 +49,10 @@ docker compose exec worker yt-dlp -v --simulate --proxy http://egress:8888 \
 # expect: Retrieved a gvs PO Token for mweb client
 ```
 
+### Residential proxy fallback
+
+When YouTube blocks the server, a job is retried once through a residential proxy, if `FETCHALL_PROXY_URL` is set (a secret, e.g. `http://user-session-{session}:password@gw.example:823`; `{session}` becomes a sticky-session id so extraction and download share one IP). Proxied traffic is still SSRF-checked by egress, which counts every byte against `FETCHALL_PROXY_DAILY_BYTES` (300 MB) and switches the tier off for the rest of the day when it's reached. Proxied videos are capped at 720p, 15 minutes and 200 MB, 3 per visitor per day.
+
 ## Blocking content
 
 `deploy/config/policy.toml` holds blocked URLs, domains and uploaders, plus the adult-domain list behind the 18+ gate. The API and worker reload it whenever it changes; no restart needed.

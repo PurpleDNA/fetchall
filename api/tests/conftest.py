@@ -22,12 +22,19 @@ class FakeExtractor:
     def __init__(self):
         self.script: dict[str, MediaInfo | Exception | Callable[[], MediaInfo]] = {}
         self.downloads: dict[str, bytes | Exception | Callable[[], bytes]] = {}
+        self.proxy_script: dict[str, MediaInfo | Exception] = {}
+        self.proxy_downloads: dict[str, bytes | Exception] = {}
         self.download_calls: list[tuple[str, tuple[str, ...], str]] = []
         self.inspect_calls: list[str] = []
+        self.routes: list[tuple[str, str, str]] = []
 
-    def download(self, url, format_ids, container, dest: Path, progress) -> Path:
+    def download(
+        self, url, format_ids, container, dest: Path, progress, route="server", max_filesize=None
+    ) -> Path:
         self.download_calls.append((url, format_ids, container))
-        result = self.downloads.get(url, b"merged-bytes")
+        self.routes.append(("download", url, route))
+        downloads = self.proxy_downloads if route != "server" else self.downloads
+        result = downloads.get(url, b"merged-bytes")
         progress("downloading", 0.5)
         if isinstance(result, Exception):
             raise result
@@ -40,9 +47,11 @@ class FakeExtractor:
         path.write_bytes(data)
         return path
 
-    def inspect(self, url: str) -> MediaInfo:
+    def inspect(self, url: str, route: str = "server") -> MediaInfo:
         self.inspect_calls.append(url)
-        result = self.script.get(url)
+        self.routes.append(("inspect", url, route))
+        script = self.proxy_script if route != "server" else self.script
+        result = script.get(url)
         if result is None:
             raise AssertionError(f"FakeExtractor has no script for {url}")
         if isinstance(result, Exception):

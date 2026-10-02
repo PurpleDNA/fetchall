@@ -62,10 +62,16 @@ class JobStore:
         raw = self._redis.lindex(_events_key(job_id), -1)
         return json.loads(raw) if raw else None
 
-    def save_media(self, job_id: str, media: MediaInfo, adult: bool = False) -> None:
+    def save_media(
+        self, job_id: str, media: MediaInfo, adult: bool = False, route: str = "server"
+    ) -> None:
         self._redis.hset(
-            _meta_key(job_id), mapping={"media": json.dumps(asdict(media)), "adult": int(adult)}
+            _meta_key(job_id),
+            mapping={"media": json.dumps(asdict(media)), "adult": int(adult), "route": route},
         )
+
+    def route(self, job_id: str) -> str:
+        return (self._redis.hget(_meta_key(job_id), "route") or b"server").decode()
 
     def is_adult(self, job_id: str) -> bool:
         return self._redis.hget(_meta_key(job_id), "adult") == b"1"
@@ -79,7 +85,7 @@ class JobStore:
         return MediaInfo(**data)
 
 
-META_FIELDS = ("kind", "url", "owner", "created_at", "site", "tier", "bytes")
+META_FIELDS = ("kind", "url", "owner", "created_at", "site", "tier", "bytes", "route")
 
 
 def new_job_id() -> str:
