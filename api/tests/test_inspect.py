@@ -205,3 +205,18 @@ def test_h264_is_preferred_over_vp9_at_the_same_height_so_the_mp4_plays_everywhe
     option = harness.client.get(f"/jobs/{job_id}").json()["media"]["options"][0]
 
     assert (option["id"], option["size"]) == ("1080p", 53 * MB)
+
+
+@pytest.mark.parametrize("outcome", list(Outcome))
+def test_every_failure_outcome_reaches_the_visitor(harness, outcome):
+    harness.extractor.script[URL] = ExtractionFailed(outcome, f"message for {outcome}")
+    job_id = harness.inspect(URL)
+
+    harness.run_jobs()
+
+    state = harness.client.get(f"/jobs/{job_id}").json()
+    assert (state["stage"], state["outcome"], state["message"]) == (
+        "failed",
+        outcome.value,
+        f"message for {outcome}",
+    )

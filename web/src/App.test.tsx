@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import App from "./App";
+import { OUTCOME_TITLES } from "./outcomes";
 import { FakeEventSource, installEventSource, json, media, stubFetch } from "./test/fakes";
 
 const healthy = { "GET /health": json({ status: "ok", redis: "ok" }) };
@@ -44,14 +45,22 @@ test("shows the video's details and quality choices with the best preselected", 
   expect(screen.getByText("43 MB")).toBeInTheDocument();
 });
 
-test("shows the reason when a job fails", async () => {
-  const source = await startJob();
+test.each(Object.entries(OUTCOME_TITLES))(
+  "shows a distinct heading and the reason for a %s failure",
+  async (outcome, title) => {
+    const source = await startJob();
 
-  act(() =>
-    source.emit({ stage: "failed", at: 2, outcome: "login_required", message: "Needs a login." }),
-  );
+    act(() => source.emit({ stage: "failed", at: 2, outcome, message: `Because ${outcome}.` }));
 
-  expect(screen.getByRole("alert")).toHaveTextContent("Needs a login.");
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(title);
+    expect(alert).toHaveTextContent(`Because ${outcome}.`);
+  },
+);
+
+test("every outcome heading is different", () => {
+  const titles = Object.values(OUTCOME_TITLES);
+  expect(new Set(titles).size).toBe(titles.length);
 });
 
 test("explains when the link isn't a web link", async () => {
