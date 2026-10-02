@@ -1,0 +1,6 @@
+{$FETCHALL_HOST} {
+	reverse_proxy api:8000 {
+		# Progress is streamed (SSE); send each event as soon as it's written.
+		flush_interval -1
+	}
+}

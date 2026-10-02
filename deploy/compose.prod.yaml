@@ -1,0 +1,100 @@
+# Production stack on the Oracle VM: `docker compose -f compose.prod.yaml up -d`
+name: fetchall-prod
+
+x-backend: &backend
+  image: ghcr.io/purpledna/fetchall-api:${FETCHALL_TAG:-latest}
+  build: ../api
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    - prepared:/data/prepared
+    - logs:/data/log
+    - ./config:/config:ro
+
+x-env: &env
+  FETCHALL_ENVIRONMENT: production
+  FETCHALL_REDIS_URL: redis://redis:6379/0
+  FETCHALL_TEMP_DIR: /data/prepared
+  FETCHALL_JOB_LOG_PATH: /data/log/jobs.sqlite3
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      FETCHALL_HOST: ${FETCHALL_HOST:?set FETCHALL_HOST in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge, front]
+    depends_on: [api]
+
+  api:
+    <<: *backend
+    environment:
+      <<: *env
+      FETCHALL_EGRESS_PROXY_URL: http://egress:8888
+      # Only Caddy can reach the API, so its X-Forwarded-For is trusted.
+      FORWARDED_ALLOW_IPS: "*"
+    networks: [front, internal]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "fetchall.worker"]
+    environment:
+      <<: *env
+      FETCHALL_EGRESS_PROXY_URL: http://egress:8888
+      FETCHALL_POT_PROVIDER_URL: http://bgutil:4416
+      HTTP_PROXY: http://egress:8888
+      HTTPS_PROXY: http://egress:8888
+      NO_PROXY: redis,bgutil
+    networks: [internal]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  egress:
+    <<: *backend
+    command: ["python", "-m", "fetchall.egress"]
+    environment:
+      <<: *env
+    networks: [internal, edge]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    restart: unless-stopped
+    networks: [internal]
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  prepared: {}
+  logs: {}
+  caddy-data: {}
+  caddy-config: {}
+
+networks:
+  edge: {}
+  front:
+    internal: true
+  internal:
+    internal: true
