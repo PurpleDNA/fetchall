@@ -1,0 +1,17 @@
+# Edited live: the API and worker reload this file when it changes.
+blocked_urls = []
+blocked_domains = []
+blocked_uploaders = []
+
+adult_domains = [
+  "pornhub.com",
+  "xvideos.com",
+  "xnxx.com",
+  "xhamster.com",
+  "redtube.com",
+  "youporn.com",
+  "tube8.com",
+  "spankbang.com",
+  "eporner.com",
+  "motherless.com",
+]

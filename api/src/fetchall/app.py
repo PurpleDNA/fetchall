@@ -20,10 +20,12 @@ from fetchall.delivery import Delivery, UnknownOption, content_disposition, plan
 from fetchall.extractor import Outcome
 from fetchall.jobs import QUEUED, TERMINAL, Event, failed, new_job_id
 from fetchall.limits import Refusal
+from fetchall.policy import UNAVAILABLE_MESSAGE
 from fetchall.runtime import Runtime, build
 
 MAX_URL_LENGTH = 2048
 WORKER_LOST_MESSAGE = "The job stopped unexpectedly. Try again in a moment."
+AGE_CONFIRMATION_REQUIRED = "age_confirmation_required"
 BUSY_MESSAGE = (
     "fetchall is busy preparing other downloads. Try again in a few minutes, "
     "or pick a quality that doesn't need processing."
@@ -88,6 +90,10 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
 
     @app.post("/jobs", status_code=202)
     def create_job(body: JobRequest, request: Request):
+        if rt.policy.current().blocks_url(body.url):
+            job_id = rt.jobs.create("inspect", body.url)
+            rt.jobs.append(job_id, failed(Outcome.UNSUPPORTED, UNAVAILABLE_MESSAGE))
+            return {"id": job_id, **current_state(job_id)}
         job_id = admit(request, "inspect", body.url)
         rt.queue.enqueue(
             tasks.inspect,
@@ -134,30 +140,38 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
                 yield ServerSentEvent(data=state)
             await anyio.sleep(rt.settings.sse_poll_seconds)
 
-    def plan_for(job_id: str, option_id: str):
+    def plan_for(job_id: str, option_id: str, age_confirmed: bool = False):
         media = rt.jobs.load_media(job_id)
         if media is None:
             raise HTTPException(409, "This link hasn't finished inspecting yet.")
+        if rt.policy.current().blocks_media(media):
+            raise HTTPException(404, UNAVAILABLE_MESSAGE)
+        if rt.jobs.is_adult(job_id) and not age_confirmed:
+            raise HTTPException(403, AGE_CONFIRMATION_REQUIRED)
         try:
             return plan_delivery(media, option_id, rt.caps)
         except UnknownOption:
             raise HTTPException(404, "That option isn't available for this video.") from None
 
     @app.get("/jobs/{job_id}/downloads/{option_id}")
-    def download_plan(job_id: Existing, option_id: str):
-        plan = plan_for(job_id, option_id)
+    def download_plan(job_id: Existing, option_id: str, age_confirmed: bool = False):
+        plan = plan_for(job_id, option_id, age_confirmed)
         body = {"delivery": plan.delivery, "filename": plan.filename}
         if plan.delivery == Delivery.DIRECT:
             body["url"] = plan.source_url
         elif plan.delivery == Delivery.STREAM:
-            body["url"] = f"/jobs/{job_id}/files/{option_id}"
+            query = "?age_confirmed=true" if age_confirmed else ""
+            body["url"] = f"/jobs/{job_id}/files/{option_id}{query}"
         return body
 
     @app.get("/jobs/{job_id}/files/{option_id}")
     async def stream_file(
-        job_id: Existing, option_id: str, range: Annotated[str | None, Header()] = None
+        job_id: Existing,
+        option_id: str,
+        age_confirmed: bool = False,
+        range: Annotated[str | None, Header()] = None,
     ):
-        plan = await anyio.to_thread.run_sync(plan_for, job_id, option_id)
+        plan = await anyio.to_thread.run_sync(plan_for, job_id, option_id, age_confirmed)
         if plan.delivery != Delivery.STREAM:
             raise HTTPException(404, "This option isn't streamed by the server.")
         client = rt.http_client()
@@ -196,8 +210,8 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
         )
 
     @app.post("/jobs/{job_id}/prepare/{option_id}", status_code=202)
-    def prepare(job_id: Existing, option_id: str, request: Request):
-        plan = plan_for(job_id, option_id)
+    def prepare(job_id: Existing, option_id: str, request: Request, age_confirmed: bool = False):
+        plan = plan_for(job_id, option_id, age_confirmed)
         if plan.delivery != Delivery.PREPARE:
             raise HTTPException(409, "This option doesn't need preparing; download it directly.")
         rt.temp.sweep()

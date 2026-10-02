@@ -54,8 +54,13 @@ class JobStore:
         raw = self._redis.lindex(_events_key(job_id), -1)
         return json.loads(raw) if raw else None
 
-    def save_media(self, job_id: str, media: MediaInfo) -> None:
-        self._redis.hset(_meta_key(job_id), "media", json.dumps(asdict(media)))
+    def save_media(self, job_id: str, media: MediaInfo, adult: bool = False) -> None:
+        self._redis.hset(
+            _meta_key(job_id), mapping={"media": json.dumps(asdict(media)), "adult": int(adult)}
+        )
+
+    def is_adult(self, job_id: str) -> bool:
+        return self._redis.hget(_meta_key(job_id), "adult") == b"1"
 
     def load_media(self, job_id: str) -> MediaInfo | None:
         raw = self._redis.hget(_meta_key(job_id), "media")

@@ -49,6 +49,8 @@ class MediaInfo:
     thumbnail: str | None
     age_limit: int
     formats: tuple[Format, ...]
+    uploader_id: str | None = None
+    uploader_url: str | None = None
 
 
 Progress = Callable[[str, float | None], None]

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     max_duration_seconds: int = 3600
     max_filesize_bytes: int = 1_000_000_000
     ip_hash_salt: str = "dev-only-salt"
+    policy_file: str = "/config/policy.toml"
 
     prepare_timeout_seconds: int = 900
     temp_dir: str = "/tmp/fetchall"

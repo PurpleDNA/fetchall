@@ -1,4 +1,5 @@
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -22,6 +23,7 @@ class FakeExtractor:
         self.script: dict[str, MediaInfo | Exception | Callable[[], MediaInfo]] = {}
         self.downloads: dict[str, bytes | Exception | Callable[[], bytes]] = {}
         self.download_calls: list[tuple[str, tuple[str, ...], str]] = []
+        self.inspect_calls: list[str] = []
 
     def download(self, url, format_ids, container, dest: Path, progress) -> Path:
         self.download_calls.append((url, format_ids, container))
@@ -39,6 +41,7 @@ class FakeExtractor:
         return path
 
     def inspect(self, url: str) -> MediaInfo:
+        self.inspect_calls.append(url)
         result = self.script.get(url)
         if result is None:
             raise AssertionError(f"FakeExtractor has no script for {url}")
@@ -90,6 +93,12 @@ class Harness:
     def run_jobs(self, max_jobs: int | None = None) -> None:
         SimpleWorker([self.rt.queue], connection=self.rt.redis).work(burst=True, max_jobs=max_jobs)
 
+    def write_policy(self, toml: str) -> None:
+        path = Path(self.rt.settings.policy_file)
+        path.write_text(toml)
+        stamp = path.stat().st_mtime + len(toml)
+        os.utime(path, (stamp, stamp))
+
     def as_ip(self, ip: str) -> TestClient:
         return TestClient(self.client.app, client=(ip, 50000))
 
@@ -124,6 +133,7 @@ def parse_sse(body: str) -> list[tuple[str, dict]]:
 def make_harness(tmp_path):
     def make(**settings) -> Harness:
         settings.setdefault("temp_dir", str(tmp_path / "prepared"))
+        settings.setdefault("policy_file", str(tmp_path / "policy.toml"))
         server = fakeredis.FakeServer()
         redis = fakeredis.FakeRedis(server=server)
         extractor, clock, upstream = FakeExtractor(), FakeClock(), FakeUpstream()
