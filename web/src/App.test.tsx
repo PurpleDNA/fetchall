@@ -207,3 +207,52 @@ test.each([
   expect(alert).toHaveTextContent("Please wait");
   expect(alert).toHaveTextContent(detail);
 });
+
+async function readyWith(mediaOverrides: object, routes: Parameters<typeof stubFetch>[0] = {}) {
+  const fetch = stubFetch({
+    ...routes,
+    ...healthy,
+    "POST /jobs": json({ id: "j1", stage: "queued", at: 1 }, 202),
+  });
+  render(<App />);
+  paste("https://video.example/watch/1");
+  await screen.findByText("Starting…");
+  await act(async () => {});
+  act(() =>
+    FakeEventSource.latest().emit({ stage: "ready", at: 3, media: { ...media, ...mediaOverrides } }),
+  );
+  return fetch;
+}
+
+test("ordinary videos never show the age gate", async () => {
+  await readyWith({});
+
+  expect(screen.queryByRole("group", { name: "Age confirmation" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
+});
+
+test("18+ videos hide the options until the visitor confirms their age", async () => {
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const fetch = await readyWith(
+    { age_restricted: true },
+    { "GET /jobs/j1/downloads/1080p": json({ delivery: "direct", filename: "f.mp4", url: "https://cdn.example/f.mp4" }) },
+  );
+
+  expect(screen.getByRole("group", { name: "Age confirmation" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "I'm 18 or older" }));
+  fireEvent.click(screen.getByRole("button", { name: "Download" }));
+
+  await vi.waitFor(() => expect(click).toHaveBeenCalled());
+  expect(fetch).toHaveBeenCalledWith("http://localhost:8000/jobs/j1/downloads/1080p?age_confirmed=true");
+});
+
+test("the age confirmation lasts for the browser session", async () => {
+  sessionStorage.setItem("fetchall:age-confirmed", "1");
+
+  await readyWith({ age_restricted: true });
+
+  expect(screen.queryByRole("group", { name: "Age confirmation" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
+});

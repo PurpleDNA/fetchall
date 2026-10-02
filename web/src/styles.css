@@ -286,3 +286,29 @@ footer {
   height: 6px;
   accent-color: var(--accent);
 }
+
+.thumb.blurred {
+  filter: blur(24px);
+}
+
+.age-gate {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.age-gate p {
+  margin: 0 0 12px;
+}
+
+.age-gate button {
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}

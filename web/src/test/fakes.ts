@@ -58,6 +58,7 @@ export const media = {
   duration: 125,
   thumbnail: "https://video.example/thumb.jpg",
   age_limit: 0,
+  age_restricted: false,
   options: [
     { id: "1080p", label: "1080p", height: 1080, size: 43_000_000, needs_merge: true, audio_only: false },
     { id: "720p", label: "720p", height: 720, size: 25_000_000, needs_merge: false, audio_only: false },

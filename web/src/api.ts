@@ -19,6 +19,7 @@ export type Media = {
   duration: number | null;
   thumbnail: string | null;
   age_limit: number;
+  age_restricted: boolean;
   options: QualityOption[];
 };
 
@@ -70,14 +71,29 @@ export async function createInspectJob(url: string): Promise<string> {
   return (await response.json()).id;
 }
 
-export async function planDownload(jobId: string, optionId: string): Promise<DownloadPlan> {
-  const response = await fetch(`${API_URL}/jobs/${jobId}/downloads/${optionId}`);
+const ageQuery = (confirmed: boolean) => (confirmed ? "?age_confirmed=true" : "");
+
+export async function planDownload(
+  jobId: string,
+  optionId: string,
+  ageConfirmed = false,
+): Promise<DownloadPlan> {
+  const response = await fetch(
+    `${API_URL}/jobs/${jobId}/downloads/${optionId}${ageQuery(ageConfirmed)}`,
+  );
   if (!response.ok) throw new Error("That download isn't available any more. Fetch the link again.");
   return response.json();
 }
 
-export async function startPrepare(jobId: string, optionId: string): Promise<string> {
-  const response = await fetch(`${API_URL}/jobs/${jobId}/prepare/${optionId}`, { method: "POST" });
+export async function startPrepare(
+  jobId: string,
+  optionId: string,
+  ageConfirmed = false,
+): Promise<string> {
+  const response = await fetch(
+    `${API_URL}/jobs/${jobId}/prepare/${optionId}${ageQuery(ageConfirmed)}`,
+    { method: "POST" },
+  );
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     throw new Error(detail?.detail ?? "Couldn't start preparing that download.");

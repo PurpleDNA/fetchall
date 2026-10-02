@@ -36,6 +36,10 @@ cd web && npm install && npm run dev                                            
 
 The backend reads `FETCHALL_*` environment variables, or a `.env` file. See `.env.example`. The frontend reads `VITE_API_URL` (see `web/.env.example`). Secrets never go in the repo.
 
+## Blocking content
+
+`deploy/config/policy.toml` holds blocked URLs, domains and uploaders, plus the adult-domain list behind the 18+ gate. The API and worker reload it whenever it changes; no restart needed.
+
 ## Tests
 
 ```sh

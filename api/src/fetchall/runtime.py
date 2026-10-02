@@ -11,6 +11,7 @@ from fetchall.config import Settings
 from fetchall.extractor import Extractor
 from fetchall.jobs import JobStore
 from fetchall.limits import Caps, Limiter
+from fetchall.policy import PolicyFile
 from fetchall.temp import TempStore
 
 
@@ -23,6 +24,7 @@ class Runtime:
     temp: TempStore
     limiter: Limiter
     caps: Caps
+    policy: PolicyFile
     extractor: Extractor
     http_transport: httpx2.AsyncBaseTransport | None = None
 
@@ -60,6 +62,7 @@ def build(
         jobs=JobStore(redis, settings.job_ttl_seconds, clock, on_finished=limiter.release),
         limiter=limiter,
         caps=Caps.from_settings(settings),
+        policy=PolicyFile(Path(settings.policy_file)),
         temp=TempStore(
             redis,
             Path(settings.temp_dir),

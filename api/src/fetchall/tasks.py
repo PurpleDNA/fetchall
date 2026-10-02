@@ -8,6 +8,7 @@ from fetchall import runtime
 from fetchall.extractor import ExtractionFailed, MediaInfo, Outcome
 from fetchall.jobs import DOWNLOADING, EXTRACTING, MERGING, READY, failed
 from fetchall.limits import Caps
+from fetchall.policy import UNAVAILABLE_MESSAGE
 from fetchall.quality import quality_options
 
 log = logging.getLogger(__name__)
@@ -31,12 +32,17 @@ def inspect(job_id: str, url: str) -> None:
         log.exception("inspect crashed for job %s", job_id)
         rt.jobs.append(job_id, failed(Outcome.INTERNAL, CRASH_MESSAGE))
         return
+    policy = rt.policy.current()
+    if policy.blocks_media(media):
+        rt.jobs.append(job_id, failed(Outcome.UNSUPPORTED, UNAVAILABLE_MESSAGE))
+        return
     too_large = _over_caps(media, rt.caps)
     if too_large:
         rt.jobs.append(job_id, failed(Outcome.TOO_LARGE, too_large))
         return
-    rt.jobs.save_media(job_id, media)
-    rt.jobs.append(job_id, {"stage": READY, "media": present(media, rt.caps)})
+    adult = policy.is_adult(media, url)
+    rt.jobs.save_media(job_id, media, adult=adult)
+    rt.jobs.append(job_id, {"stage": READY, "media": present(media, rt.caps, adult)})
 
 
 def prepare(
@@ -98,7 +104,7 @@ def _over_caps(media: MediaInfo, caps: Caps) -> str | None:
     return None
 
 
-def present(media: MediaInfo, caps: Caps | None = None) -> dict:
+def present(media: MediaInfo, caps: Caps | None = None, adult: bool = False) -> dict:
     return {
         "title": media.title,
         "url": media.url,
@@ -107,5 +113,6 @@ def present(media: MediaInfo, caps: Caps | None = None) -> dict:
         "duration": media.duration,
         "thumbnail": media.thumbnail,
         "age_limit": media.age_limit,
+        "age_restricted": adult,
         "options": [asdict(o) for o in quality_options(media, caps)],
     }

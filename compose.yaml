@@ -6,6 +6,7 @@ x-backend: &backend
       required: false
   volumes:
     - prepared:/data/prepared
+    - ./deploy/config:/config:ro
 
 services:
   redis:

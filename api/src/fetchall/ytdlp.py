@@ -111,6 +111,8 @@ def normalise(info: dict[str, Any]) -> MediaInfo:
         thumbnail=info.get("thumbnail"),
         age_limit=info.get("age_limit") or 0,
         formats=formats,
+        uploader_id=info.get("uploader_id") or info.get("channel_id"),
+        uploader_url=info.get("uploader_url") or info.get("channel_url"),
     )
 
 
