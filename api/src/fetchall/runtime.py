@@ -9,7 +9,8 @@ from rq import Queue
 
 from fetchall.config import Settings
 from fetchall.extractor import Extractor
-from fetchall.jobs import JobStore
+from fetchall.joblog import JobLog
+from fetchall.jobs import READY, Event, JobStore
 from fetchall.limits import Caps, Limiter
 from fetchall.policy import PolicyFile
 from fetchall.temp import TempStore
@@ -25,6 +26,7 @@ class Runtime:
     limiter: Limiter
     caps: Caps
     policy: PolicyFile
+    joblog: JobLog
     extractor: Extractor
     http_transport: httpx2.AsyncBaseTransport | None = None
 
@@ -55,11 +57,32 @@ def build(
             proxy=settings.egress_proxy_url, max_filesize=settings.max_filesize_bytes
         )
     limiter = Limiter(redis, settings, clock)
+    joblog = JobLog(Path(settings.job_log_path), settings.job_log_retention_seconds, clock)
+
+    def finished(job_id: str, meta: dict[str, str], event: Event) -> None:
+        if meta.get("owner"):
+            limiter.release(meta["owner"], job_id)
+        joblog.record(
+            {
+                "id": job_id,
+                "visitor": meta.get("owner", ""),
+                "kind": meta.get("kind", ""),
+                "url": meta.get("url", ""),
+                "site": meta.get("site"),
+                "tier": meta.get("tier"),
+                "outcome": "ok" if event["stage"] == READY else event.get("outcome", "internal"),
+                "bytes": int(meta.get("bytes", 0)),
+                "created_at": float(meta.get("created_at", clock())),
+                "finished_at": clock(),
+            }
+        )
+
     return Runtime(
         settings=settings,
         redis=redis,
         queue=Queue(settings.queue_name, connection=redis),
-        jobs=JobStore(redis, settings.job_ttl_seconds, clock, on_finished=limiter.release),
+        jobs=JobStore(redis, settings.job_ttl_seconds, clock, on_finished=finished),
+        joblog=joblog,
         limiter=limiter,
         caps=Caps.from_settings(settings),
         policy=PolicyFile(Path(settings.policy_file)),

@@ -134,6 +134,7 @@ def make_harness(tmp_path):
     def make(**settings) -> Harness:
         settings.setdefault("temp_dir", str(tmp_path / "prepared"))
         settings.setdefault("policy_file", str(tmp_path / "policy.toml"))
+        settings.setdefault("job_log_path", str(tmp_path / "log" / "jobs.sqlite3"))
         server = fakeredis.FakeServer()
         redis = fakeredis.FakeRedis(server=server)
         extractor, clock, upstream = FakeExtractor(), FakeClock(), FakeUpstream()

@@ -58,6 +58,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
     async def sweep_forever():
         while True:
             await anyio.to_thread.run_sync(rt.temp.sweep)
+            await anyio.to_thread.run_sync(rt.joblog.purge)
             await anyio.sleep(rt.settings.sweep_interval_seconds)
 
     app = FastAPI(title="fetchall", lifespan=lifespan)
@@ -91,7 +92,8 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
     @app.post("/jobs", status_code=202)
     def create_job(body: JobRequest, request: Request):
         if rt.policy.current().blocks_url(body.url):
-            job_id = rt.jobs.create("inspect", body.url)
+            visitor = rt.limiter.visitor(request.client.host if request.client else "unknown")
+            job_id = rt.jobs.create("inspect", body.url, owner=visitor)
             rt.jobs.append(job_id, failed(Outcome.UNSUPPORTED, UNAVAILABLE_MESSAGE))
             return {"id": job_id, **current_state(job_id)}
         job_id = admit(request, "inspect", body.url)
@@ -226,6 +228,7 @@ def create_app(rt: Runtime | None = None) -> FastAPI:
             plan.format_ids,
             plan.container,
             plan.filename,
+            media.site,
             job_id=prepare_id,
             job_timeout=rt.settings.prepare_timeout_seconds,
             result_ttl=rt.settings.job_ttl_seconds,

@@ -6,6 +6,7 @@ x-backend: &backend
       required: false
   volumes:
     - prepared:/data/prepared
+    - logs:/data/log
     - ./deploy/config:/config:ro
 
 services:
@@ -24,6 +25,7 @@ services:
       FETCHALL_REDIS_URL: redis://redis:6379/0
       FETCHALL_EGRESS_PROXY_URL: http://egress:8888
       FETCHALL_TEMP_DIR: /data/prepared
+      FETCHALL_JOB_LOG_PATH: /data/log/jobs.sqlite3
     networks: [internal, outside]
     ports:
       - "8000:8000"
@@ -39,6 +41,7 @@ services:
       FETCHALL_REDIS_URL: redis://redis:6379/0
       FETCHALL_EGRESS_PROXY_URL: http://egress:8888
       FETCHALL_TEMP_DIR: /data/prepared
+      FETCHALL_JOB_LOG_PATH: /data/log/jobs.sqlite3
       HTTP_PROXY: http://egress:8888
       HTTPS_PROXY: http://egress:8888
       NO_PROXY: redis
@@ -69,6 +72,7 @@ services:
 
 volumes:
   prepared: {}
+  logs: {}
 
 networks:
   internal:
