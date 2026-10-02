@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     # Every worker request goes through the egress proxy; unset only for local runs outside Docker.
     egress_proxy_url: str | None = None
+    pot_provider_url: str | None = None
+    youtube_player_clients: list[str] = ["default", "mweb"]
     egress_host: str = "0.0.0.0"
     egress_port: int = 8888
     egress_max_bytes: int = 1_500_000_000

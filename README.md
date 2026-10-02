@@ -36,6 +36,19 @@ cd web && npm install && npm run dev                                            
 
 The backend reads `FETCHALL_*` environment variables, or a `.env` file. See `.env.example`. The frontend reads `VITE_API_URL` (see `web/.env.example`). Secrets never go in the repo.
 
+## YouTube
+
+Datacenter IPs get extra checks from YouTube. The worker asks the `bgutil` sidecar for PO tokens and prefers the `default` + `mweb` player clients (`FETCHALL_YOUTUBE_PLAYER_CLIENTS`). The sidecar has no internet access of its own; it reaches Google through the egress proxy that yt-dlp hands it.
+
+To check it by hand:
+
+```sh
+docker compose exec worker yt-dlp -v --simulate --proxy http://egress:8888 \
+  --extractor-args "youtubepot-bgutilhttp:base_url=http://bgutil:4416" \
+  "https://www.youtube.com/watch?v=aqz-KE-bpKQ" 2>&1 | grep -i "po token"
+# expect: Retrieved a gvs PO Token for mweb client
+```
+
 ## Blocking content
 
 `deploy/config/policy.toml` holds blocked URLs, domains and uploaders, plus the adult-domain list behind the 18+ gate. The API and worker reload it whenever it changes; no restart needed.

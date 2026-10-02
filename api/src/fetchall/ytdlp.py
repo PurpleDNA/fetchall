@@ -26,9 +26,21 @@ class YtDlpExtractor:
         self,
         proxy: str | None = None,
         max_filesize: int | None = None,
+        pot_provider_url: str | None = None,
+        youtube_player_clients: list[str] | None = None,
         options: dict[str, Any] | None = None,
     ):
-        self._options = {**BASE_OPTIONS, **({"proxy": proxy} if proxy else {}), **(options or {})}
+        extractor_args: dict[str, dict[str, list[str]]] = {}
+        if youtube_player_clients:
+            extractor_args["youtube"] = {"player_client": youtube_player_clients}
+        if pot_provider_url:
+            extractor_args["youtubepot-bgutilhttp"] = {"base_url": [pot_provider_url]}
+        self._options = {
+            **BASE_OPTIONS,
+            **({"proxy": proxy} if proxy else {}),
+            **({"extractor_args": extractor_args} if extractor_args else {}),
+            **(options or {}),
+        }
         self._max_filesize = max_filesize
 
     def inspect(self, url: str) -> MediaInfo:

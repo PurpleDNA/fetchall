@@ -54,7 +54,10 @@ def build(
         from fetchall.ytdlp import YtDlpExtractor
 
         extractor = YtDlpExtractor(
-            proxy=settings.egress_proxy_url, max_filesize=settings.max_filesize_bytes
+            proxy=settings.egress_proxy_url,
+            max_filesize=settings.max_filesize_bytes,
+            pot_provider_url=settings.pot_provider_url,
+            youtube_player_clients=settings.youtube_player_clients,
         )
     limiter = Limiter(redis, settings, clock)
     joblog = JobLog(Path(settings.job_log_path), settings.job_log_retention_seconds, clock)

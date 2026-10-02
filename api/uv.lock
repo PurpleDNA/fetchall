@@ -38,6 +38,15 @@ wheels = [
 ]
 
 [[package]]
+name = "bgutil-ytdlp-pot-provider"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/e4/39c3419b14cf38d77917640dde16a7cec98f5effc5ade331106893a0fe72/bgutil_ytdlp_pot_provider-2.0.1.tar.gz", hash = "sha256:8038cd744a5e2e12a56eab4a5319d0edd31e9f1e4beff5cb13487a19cb755310", size = 12095, upload-time = "2026-10-02T00:49:58.214Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/8c/e084842878d23b89c7a263a0c0a29a31b256b61289193979fc192db0aec1/bgutil_ytdlp_pot_provider-2.0.1-py3-none-any.whl", hash = "sha256:ff6c2e85443e0777e2483e4a5ef2084ca745a1dd3cc07cf355ddd3a77bd882e8", size = 12777, upload-time = "2026-10-02T00:49:57.002Z" },
+]
+
+[[package]]
 name = "brotli"
 version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -386,6 +395,7 @@ name = "fetchall"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "bgutil-ytdlp-pot-provider" },
     { name = "fastapi" },
     { name = "httpx2" },
     { name = "pydantic-settings" },
@@ -404,6 +414,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bgutil-ytdlp-pot-provider", specifier = ">=2.0.1" },
     { name = "fastapi", specifier = ">=0.142.2" },
     { name = "httpx2", specifier = ">=2.13.1" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },

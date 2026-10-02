@@ -152,3 +152,23 @@ def test_routes_every_request_through_the_egress_proxy():
     extractor = YtDlpExtractor(proxy="http://egress:8888")
 
     assert extractor._options["proxy"] == "http://egress:8888"
+
+
+def test_youtube_uses_the_po_token_provider_and_less_checked_clients():
+    extractor = YtDlpExtractor(
+        pot_provider_url="http://bgutil:4416", youtube_player_clients=["default", "mweb"]
+    )
+
+    assert extractor._options["extractor_args"] == {
+        "youtube": {"player_client": ["default", "mweb"]},
+        "youtubepot-bgutilhttp": {"base_url": ["http://bgutil:4416"]},
+    }
+
+
+def test_the_po_token_plugin_is_installed():
+    from yt_dlp.extractor.youtube.pot.provider import _pot_providers
+    from yt_dlp.plugins import load_all_plugins
+
+    load_all_plugins()
+
+    assert "BgUtilHTTP" in _pot_providers.value
