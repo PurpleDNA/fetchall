@@ -1,0 +1,32 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - iptables-persistent
+write_files:
+  - path: /usr/local/sbin/fetchall-firewall
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Oracle's Ubuntu image only admits SSH; open the web ports.
+      for port in 80 443; do
+        iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null \
+          || iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+      done
+      # Defence in depth for the egress guard: no container may reach the cloud
+      # metadata service or the VCN. Oracle's DNS resolver shares 169.254.169.254,
+      # so port 53 stays open.
+      iptables -N DOCKER-USER 2>/dev/null || true
+      add() { iptables -C DOCKER-USER "$@" 2>/dev/null || iptables -I DOCKER-USER "$@"; }
+      add -d 10.42.0.0/16 -j DROP
+      add -d 169.254.0.0/16 -p tcp ! --dport 53 -j DROP
+      add -d 169.254.0.0/16 -p udp ! --dport 53 -j DROP
+      add -d 169.254.0.0/16 -p icmp -j DROP
+      netfilter-persistent save
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu
+  - /usr/local/sbin/fetchall-firewall
+  - systemctl enable --now docker

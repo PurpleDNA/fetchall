@@ -1,0 +1,81 @@
+name: Provision Oracle VM
+
+# Oracle's free ARM capacity comes and goes; keep trying until the VM exists, then switch off.
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+concurrency:
+  group: provision
+  cancel-in-progress: false
+
+jobs:
+  vm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/terraform
+    env:
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_IN_AUTOMATION: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Oracle credentials
+        env:
+          OCI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.oci && chmod 700 ~/.oci
+          printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem && chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<CONFIG
+          [DEFAULT]
+          user=$OCI_USER
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY
+          region=af-johannesburg-1
+          key_file=$HOME/.oci/key.pem
+          CONFIG
+          chmod 600 ~/.oci/config
+
+      - run: terraform init -input=false -backend-config="namespace=${{ secrets.OCI_NAMESPACE }}"
+
+      - name: Create the VM
+        id: apply
+        run: |
+          if terraform state list | grep -q '^oci_core_instance.fetchall$'; then
+            echo "VM already exists."
+            echo "created=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for fd in FAULT-DOMAIN-1 FAULT-DOMAIN-2 FAULT-DOMAIN-3; do
+            if terraform apply -input=false -auto-approve -var fault_domain="$fd" > apply.log 2>&1; then
+              echo "Created in $fd."
+              echo "created=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            grep -oE 'Out of host capacity|Error: .{0,160}' apply.log | head -1
+          done
+          echo "No capacity this time; will retry on the next schedule."
+          echo "created=false" >> "$GITHUB_OUTPUT"
+
+      - name: Announce and stop retrying
+        if: steps.apply.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ip=$(terraform output -raw public_ip)
+          host=$(terraform output -raw api_hostname)
+          gh issue comment 14 -R "$GITHUB_REPOSITORY" --body "Provision workflow: the Oracle VM exists at \`$ip\` (\`https://$host\`). Retries are now switched off."
+          gh workflow disable provision.yml -R "$GITHUB_REPOSITORY"
