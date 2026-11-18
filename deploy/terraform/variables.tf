@@ -14,7 +14,7 @@ variable "oci_profile" {
 
 variable "ocpus" {
   type    = number
-  default = 2
+  default = 1
 }
 
 variable "memory_gbs" {
